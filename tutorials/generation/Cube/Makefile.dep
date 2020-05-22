@@ -1,0 +1,11 @@
+main.o: main.cpp ../../../src/voro/src/voro++.hh \
+ ../../../src/voro/src/config.hh ../../../src/voro/src/common.hh \
+ ../../../src/voro/src/cell.hh ../../../src/voro/src/v_base.hh \
+ ../../../src/voro/src/worklist.hh ../../../src/voro/src/rad_option.hh \
+ ../../../src/voro/src/container.hh ../../../src/voro/src/c_loops.hh \
+ ../../../src/voro/src/v_compute.hh ../../../src/voro/src/unitcell.hh \
+ ../../../src/voro/src/container_prd.hh \
+ ../../../src/voro/src/pre_container.hh ../../../src/voro/src/wall.hh \
+ ../../../src/mesh/src/voromesh++.hpp ../../../src/mesh/src/geometry.hpp \
+ ../../../src/mesh/src/utils_io.hpp ../../../src/mesh/src/utils_math.hpp \
+ ../../../src/mesh/src/mesh.hpp

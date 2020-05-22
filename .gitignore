@@ -1,0 +1,9 @@
+*.a
+*.o
+*.so
+
+# MACOS
+*.DS_Store
+
+# VTK
+*.vtu

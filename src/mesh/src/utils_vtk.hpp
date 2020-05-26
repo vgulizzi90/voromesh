@@ -9,6 +9,12 @@
 
 #include "utils_io.hpp"
 
+#define VTK_VERTEX 1
+#define VTK_LINE 3
+#define VTK_TRIANGLE 5
+#define VTK_QUAD 9
+#define VTK_TETRA 10
+
 namespace voromesh
 {
 namespace vtk

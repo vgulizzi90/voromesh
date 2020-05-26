@@ -50,7 +50,6 @@ int main()
                         p1, p2, p3,
                         8);
     
-    voromesh::Geometry geo;
     voromesh::Mesh msh;
     // ----------------------------------------------------------------
 
@@ -64,14 +63,15 @@ int main()
     }
     // ----------------------------------------------------------------
 
-    // INITIALIZE THE TESSELLATION GEOMETRY AND THE TESSELLATION MESH -
-    geo.init(con);
-    //msh.init(geo);
-    // ----------------------------------------------------------------
+    // INITIALIZE THE MESH WITH THE TESSELLATION INFORMATION
+    msh.init(con);
 
-    // EXPORT TO VTK FORMAT -------------------------------------------
-    geo.export_VTK("geo.vtu");
-    //msh.export_VTK("mesh.vtu");
-    // ----------------------------------------------------------------
+    // BUILD THE MESH
+    msh.build(3, 1.0);
+
+    // EXPORT TO VTK FORMAT
+    msh.export_vtk("mesh.vtu");
+
+    //msh.cut_cell(0, 2.0, 0.0, 0.0, 1.0);
 }
 // ====================================================================

@@ -18,6 +18,7 @@
 
 namespace voromesh
 {
+    
 // VORONOI CELL FACE CLASS ############################################
 struct VorocellFace
 {

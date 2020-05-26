@@ -156,7 +156,7 @@ void Geometry::build()
                 else if (nbr_id == vc.id)
                 {
                     io::error("geometry.cpp - Geometry::build",
-                                "Cells neighboring with themselves must be handled yet.");
+                              "Cells neighboring with themselves must be handled yet.");
                 }
                 // AN ACTUAL NEIGHBORING CELL
                 else
@@ -180,7 +180,7 @@ void Geometry::build()
                     if (!found)
                     {
                         io::error("geometry.cpp - Geometry::build",
-                                    "The neighbor cells information is not consistent.");
+                                  "The neighbor cells information is not consistent.");
                     }
                 }
             }
@@ -323,7 +323,7 @@ void Geometry::build()
                     if (!found)
                     {
                         io::error("geometry.cpp - Geometry::build",
-                                    "The neighbor cells information is not consistent.");
+                                  "The neighbor cells information is not consistent.");
                     }
                 }
 

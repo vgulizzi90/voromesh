@@ -3,6 +3,11 @@
 #ifndef VOROMESH_MATH_HPP_
 #define VOROMESH_MATH_HPP_
 
+#include <cmath>
+#include <iostream>
+#include <iomanip>
+#include <vector>
+
 namespace voromesh
 {
 namespace math
@@ -12,7 +17,17 @@ namespace math
 #define SIXTH (1.0/6.0)
 
 inline
-double L2_distance(const double * v1, const double * v2, const size_t & n)
+double L2_norm(const double * v, const size_t n)
+{
+    double tmp;
+    tmp = 0.0;
+    for (size_t i = 0; i < n; ++i) tmp += v[i]*v[i];
+
+    return std::sqrt(tmp);
+}
+
+inline
+double L2_distance(const double * v1, const double * v2, const size_t n)
 {
     double tmp;
     tmp = 0.0;
@@ -37,6 +52,13 @@ void cross(const double * O, const double * A, const double * B, double * res)
     res[0] = -O[2]*A[1]+O[1]*A[2]+O[2]*B[1]-A[2]*B[1]-O[1]*B[2]+A[1]*B[2];
     res[1] = +O[2]*A[0]-O[0]*A[2]-O[2]*B[0]+A[2]*B[0]+O[0]*B[2]-A[0]*B[2];
     res[2] = -O[1]*A[0]+O[0]*A[1]+O[1]*B[0]-A[1]*B[0]-O[0]*B[1]+A[0]*B[1];
+}
+
+inline
+void tri_centroid_2d(const double * v1, const double * v2, const double * v3, double * G)
+{
+    G[0] = THIRD*(v1[0]+v2[0]+v3[0]);
+    G[1] = THIRD*(v1[1]+v2[1]+v3[1]);
 }
 
 inline
@@ -78,6 +100,55 @@ double tet_volume(const double * v1, const double * v2, const double * v3, const
 
     return tmp;
 }
+
+inline
+void linspace(const double xlo, const double xhi, const int N, double * S)
+{
+    const double dx = (xhi-xlo)/(N-1);
+    S[0] = xlo;
+    S[N-1] = xhi;
+    for (int n = 1; n < (N-1); ++n)
+    {
+        S[n] = xlo+n*dx;
+    }
+}
+
+// DELAUNAY TRIANGULATION #############################################
+void delaunay_2d(std::vector<double> & points, std::vector<int> & tri, std::vector<int> & tri_edges,
+                 const double min_quality = 1.0e-5);
+// ####################################################################
+
+// MATRIX OPERATION ###################################################
+namespace matrix
+{
+
+void print_inline(const int N, const double * S);
+void print_inline_int(const int N, const int * S);
+
+inline
+void transpose(const int Nr, const int Nc, const double * S, double * D)
+{
+    for (int c = 0; c < Nc; ++c)
+    for (int r = 0; r < Nr; ++r)
+        D[c+r*Nc] = S[r+c*Nr];
+}
+
+// D <- S1*S2
+inline
+void multiply(const int Nr, const int Nc, const int Nrhs, const double * S1, const double * S2, double * D)
+{
+    int N = Nr*Nrhs;
+    for (int n = 0; n < N; ++n) D[n] = 0.0;
+
+    for (int k = 0; k < Nrhs; ++k)
+    for (int r = 0; r < Nr; ++r)
+    for (int c = 0; c < Nc; ++c)
+        D[r+k*Nr] += S1[r+c*Nr]*S2[c+k*Nc];
+}
+
+}
+// ####################################################################
+
 
 }
 }

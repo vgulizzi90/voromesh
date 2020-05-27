@@ -16,15 +16,15 @@ double d_point_segment(const double * A, const double * B, const double * P)
     // PARAMETERS
     const double AB[2] = {B[0]-A[0], B[1]-A[1]};
     const double AP[2] = {P[0]-A[0], P[1]-A[1]};
-    const double AP2 = AB[0]*AB[0]+AB[1]*AB[1];
+    const double AB2 = AB[0]*AB[0]+AB[1]*AB[1];
     const double AB_AP = AB[0]*AP[0]+AB[1]*AP[1];
     double aux[2];
 
     if (AB_AP <= 0.0)
     {
-        return std::sqrt(AP2);
+        return std::sqrt(AP[0]*AP[0]+AP[1]*AP[1]);
     }
-    else if (AB_AP >= AP2)
+    else if (AB_AP >= AB2)
     {
         aux[0] = P[0]-B[0];
         aux[1] = P[1]-B[1];
@@ -32,8 +32,8 @@ double d_point_segment(const double * A, const double * B, const double * P)
     }
     else
     {
-        aux[0] = P[0]-(A[0]+AB[0]*AB_AP/AP2);
-        aux[1] = P[1]-(A[1]+AB[1]*AB_AP/AP2);
+        aux[0] = P[0]-(A[0]+AB[0]*AB_AP/AB2);
+        aux[1] = P[1]-(A[1]+AB[1]*AB_AP/AB2);
         return std::sqrt(aux[0]*aux[0]+aux[1]*aux[1]);
     }
 }
@@ -49,7 +49,7 @@ void sd_points_polygon(const std::vector<double> & vertices,
     const int n_points = points.size()/2;
 
     // RESIZE MEMORY
-    d.resize(n_points, std::numeric_limits<double>::max());
+    d.resize(n_points);
 
     // LOOP OVER THE POINTS
     for (int p = 0; p < n_points; ++p)
@@ -58,6 +58,7 @@ void sd_points_polygon(const std::vector<double> & vertices,
 
         int in = 0;
 
+        d[p] = std::numeric_limits<double>::max();
         for (int v = 0; v < n_vertices; ++v)
         {
             const double * Vi = ((v == 0) ? &vertices[2*(n_vertices-1)] : &vertices[2*(v-1)]);
@@ -87,10 +88,104 @@ void sd_points_polygon(const std::vector<double> & vertices,
         }
     }
 }
+
+/*
+double isLeft(const double * A, const double * B, const double * P)
+{
+    return ((B[0]-A[0])*(P[1]-A[1])-(P[0]-A[0])*(B[1]-A[1]));
+}
+
+void sd_points_polygon(const std::vector<double> & vertices,
+                       const std::vector<double> & points,
+                       std::vector<double> & d)
+{
+    // PARAMETERS
+    const int nv = vertices.size()/2;
+    const int np = points.size()/2;
+
+    // RESIZE MEMORY
+    d.resize(np);
+
+    // LOOP OVER THE POINTS
+    for (int p = 0; p < np; ++p)
+    {
+        const double * P = &points[2*p];
+
+        int in = 0;
+        d[p] = std::numeric_limits<double>::max();
+
+        for (int i = 0; i < nv; ++i)
+        {
+            const double * Vi = &vertices[2*i];
+            const int j = ((i == (nv-1))? 0 : i+1);
+            const double * Vj = &vertices[2*j];
+
+            if (Vi[1] <= P[1])
+            {
+                if (Vj[1] > P[1])
+                {
+                    if (isLeft(Vi, Vj, P) > 0.0) ++in;
+                }
+            }
+            else
+            {
+                if (Vj[1] <= P[1])
+                {
+                    if (isLeft(Vi, Vj, P) < 0.0) --in;
+                }
+            }
+
+            d[p] = std::min(d[p], d_point_segment(Vi, Vj, P));
+        }
+
+        if (in != 0)
+        {
+            d[p] *= -1.0;
+        }
+    }
+}
+*/
 // ####################################################################
 
 
 // COMPUTE THE MESH OF A POLYGON ######################################
+void triangulate_polygon(const std::vector<double> & vertices,
+                         std::vector<double> & nodes,
+                         std::vector<int> & triangles,
+                         std::vector<int> & edges,
+                         const double tol)
+{
+    // VARIABLES
+    std::vector<double> tri_c, dpp;
+    int n_nodes, n_triangles, n_edges;
+
+    // TRIANGULATE NODES
+    math::delaunay_2d(nodes, triangles, edges);
+    n_nodes = nodes.size()/2;
+    n_triangles = triangles.size()/3;
+    n_edges = edges.size()/2;
+
+    // REMOVE THOSE TRIANGLES THAT FALL OUTSIDE
+    tri_c.resize(2*n_triangles);
+    for (int t = 0; t < n_triangles; ++t)
+    {
+        math::tri_centroid_2d(&nodes[2*triangles[3*t+0]],
+                              &nodes[2*triangles[3*t+1]],
+                              &nodes[2*triangles[3*t+2]],
+                              &tri_c[2*t]);
+    }
+    sd_points_polygon(vertices, tri_c, dpp);
+    for (int t = (n_triangles-1); t >= 0; --t)
+    {
+        if (dpp[t] > tol)
+        {
+            triangles.erase(triangles.begin()+3*t+2);
+            triangles.erase(triangles.begin()+3*t+1);
+            triangles.erase(triangles.begin()+3*t);
+        }
+    }
+}
+
 void mesh_polygon(const double mesh_size,
                   const std::vector<double> & vertices,
                   const std::vector<double> & boundary_nodes,
@@ -107,10 +202,10 @@ void mesh_polygon(const double mesh_size,
     const double dt = 0.2;
     const double geps = 0.001*mesh_size;
     const double deps = std::sqrt(std::numeric_limits<double>::epsilon())*mesh_size;
-    const double big_eps = mesh_size*std::sqrt(3.0)/32.0;
+    const double big_eps = mesh_size*std::sqrt(3.0)/8.0;
     
-    const int max_it = 100;
     const int control_frequency = 30;
+    const int max_it = 3*control_frequency;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -134,17 +229,6 @@ void mesh_polygon(const double mesh_size,
         X2_ends[0] = std::min(X2_ends[0], vertices[2*v+1]);
         X2_ends[1] = std::max(X2_ends[1], vertices[2*v+1]);
     }
-
-    /* DEBUG
-    std::cout << "vertices:" << std::endl;
-    for (int n = 0; n < n_vertices; ++n)
-    {
-        math::matrix::print_inline(2, &vertices[2*n]); std::cout << std::endl;
-    }
-    std::cout << "bounding box:" << std::endl;
-    std::cout << "X1_ends: " << X1_ends[0] << "," << X1_ends[1] << std::endl;
-    std::cout << "X2_ends: " << X2_ends[0] << "," << X2_ends[1] << std::endl;
-    */
     // ----------------------------------------------------------------
 
     // COPY THE BOUNDARY NODES ----------------------------------------
@@ -175,14 +259,6 @@ void mesh_polygon(const double mesh_size,
         }
     }
     n_nodes = nodes.size()/2;
-
-    /* DEBUG
-    std::cout << "nodes:" << std::endl;
-    for (int n = 0; n < n_nodes; ++n)
-    {
-        math::matrix::print_inline(2, &nodes[2*n]); std::cout << std::endl;
-    }
-    */
     // ----------------------------------------------------------------
 
     // REMOVE THE NODES OUTSIDE THE POLYGON ---------------------------
@@ -197,22 +273,6 @@ void mesh_polygon(const double mesh_size,
         }
     }
     n_nodes = nodes.size()/2;
-
-    /* DEBUG
-    std::cout << "distance:" << std::endl;
-    for (int n = 0; n < n_nodes; ++n)
-    {
-        std::cout << dpp[n] << std::endl;
-    }
-    */
-
-    /* DEBUG
-    std::cout << "nodes:" << std::endl;
-    for (int n = 0; n < n_nodes; ++n)
-    {
-        math::matrix::print_inline(2, &nodes[2*n]); std::cout << std::endl;
-    }
-    */
     // ----------------------------------------------------------------
 
     // START THE ITERATIVE ALGORITHM ----------------------------------
@@ -222,48 +282,10 @@ void mesh_polygon(const double mesh_size,
     while ((it < max_it) and flag_continue)
     {
         // TRIANGULATE NODES
-        math::delaunay_2d(nodes, triangles, edges);
+        triangulate_polygon(vertices, nodes, triangles, edges, geps);
+        n_nodes = nodes.size()/2;
         n_triangles = triangles.size()/3;
         n_edges = edges.size()/2;
-
-        /* DEBUG
-        std::cout << "it: " << it << ",nodes:" << std::endl;
-        for (int n = 0; n < n_boundary_nodes; ++n)
-        {
-            math::matrix::print_inline(2, &nodes[2*n]); std::cout << std::endl;
-        }
-        std::cout << std::endl;
-        for (int n = n_boundary_nodes; n < n_nodes; ++n)
-        {
-            math::matrix::print_inline(2, &nodes[2*n]); std::cout << std::endl;
-        }
-        std::cout << "triangles:" << std::endl;
-        for (int n = 0; n < triangles.size()/3; ++n)
-        {
-            math::matrix::print_inline_int(3, &triangles[3*n]); std::cout << std::endl;
-        }
-        */
-
-        // REMOVE TRIANGLES THAT FALL OUTSITE
-        tri_c.resize(2*n_triangles);
-        for (int t = 0; t < n_triangles; ++t)
-        {
-            math::tri_centroid_2d(&nodes[2*triangles[3*t+0]],
-                                  &nodes[2*triangles[3*t+1]],
-                                  &nodes[2*triangles[3*t+2]],
-                                  &tri_c[2*t]);
-        }
-        sd_points_polygon(vertices, tri_c, dpp);
-        for (int t = (n_triangles-1); t >= 0; --t)
-        {
-            if (dpp[t] > geps)
-            {
-                triangles.erase(triangles.begin()+3*t+2);
-                triangles.erase(triangles.begin()+3*t+1);
-                triangles.erase(triangles.begin()+3*t);
-            }
-        }
-        n_triangles = triangles.size()/3;
 
         // EDGE LENGTHS
         edges_vec.resize(2*n_edges);
@@ -286,7 +308,7 @@ void mesh_polygon(const double mesh_size,
         }
         n_short_edges = short_edges.size();
 
-        if (control_frequency%(it+1) == 0)
+        if (((it+1)%control_frequency == 0) && (n_short_edges > 0))
         {
             nodes_to_be_removed.clear();
             for (int ed = 0; ed < n_short_edges; ++ed)
@@ -317,11 +339,13 @@ void mesh_polygon(const double mesh_size,
         }
 
         // COMPUTE THE NODAL FORCES
-        Fn.resize(2*n_nodes, 0.0);
+        Fn.resize(2*n_nodes);
+        std::fill(Fn.begin(), Fn.end(), 0.0);
         for (int ed = 0; ed < n_edges; ++ed)
         {
-            const double F_edge_0 = (std::max(mesh_size-edges_h[ed], 0.0)/edges_h[ed])*edges_vec[2*ed+0];
-            const double F_edge_1 = (std::max(mesh_size-edges_h[ed], 0.0)/edges_h[ed])*edges_vec[2*ed+1];
+            const double F_mag = (std::max(Fscale*mesh_size-edges_h[ed], 0.0)/edges_h[ed]);
+            const double F_edge_0 = F_mag*edges_vec[2*ed+0];
+            const double F_edge_1 = F_mag*edges_vec[2*ed+1];
 
             Fn[2*edges[2*ed+0]+0] -= F_edge_0;
             Fn[2*edges[2*ed+0]+1] -= F_edge_1;
@@ -336,7 +360,8 @@ void mesh_polygon(const double mesh_size,
         }
 
         // MOVE NODES
-        dX.resize(2*n_nodes, 0.0);
+        dX.resize(2*n_nodes);
+        std::fill(dX.begin(), dX.end(), 0.0);
         for (int n = n_boundary_nodes; n < n_nodes; ++n)
         {
             dX[2*n+0] = dt*Fn[2*n+0];
@@ -347,8 +372,8 @@ void mesh_polygon(const double mesh_size,
 
         // MAKE SURE NO NODES OTHER THAN THE BOUNDARY NODES LIE ON THE
         // BOUNDARY
-        /*
         sd_points_polygon(vertices, nodes, dpp);
+
         for (int n = (n_nodes-1); n >= n_boundary_nodes; --n)
         {
             if (dpp[n] > (-big_eps))
@@ -358,7 +383,6 @@ void mesh_polygon(const double mesh_size,
             }
         }
         n_nodes = nodes.size()/2;
-        */
 
         // CHECK THE MAXIMUM DISPLACEMENT
         dX_max = 0.0;
@@ -371,31 +395,10 @@ void mesh_polygon(const double mesh_size,
         // NEXT ITERATION
         it += 1;
     }
-
-    math::delaunay_2d(nodes, triangles, edges);
+    // FINAL TRIANGULATION
+    triangulate_polygon(vertices, nodes, triangles, edges, geps);
     // ----------------------------------------------------------------
 
-    /* DEBUG
-    std::cout << "nodes:" << std::endl;
-    for (int n = 0; n < n_nodes; ++n)
-    {
-        math::matrix::print_inline(2, &nodes[2*n]); std::cout << std::endl;
-    }
-    */
-    /* DEBUG
-    std::cout << "tri_c:" << std::endl;
-    for (int n = 0; n < n_triangles; ++n)
-    {
-        math::matrix::print_inline(2, &tri_c[2*n]); std::cout << std::endl;
-    }
-    */
-    /* DEBUG
-    std::cout << "triangles:" << std::endl;
-    for (int n = 0; n < triangles.size()/3; ++n)
-    {
-        math::matrix::print_inline_int(3, &triangles[3*n]); std::cout << std::endl;
-    }
-    */
 }
 // ####################################################################
 

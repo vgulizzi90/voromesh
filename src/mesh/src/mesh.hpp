@@ -8,6 +8,7 @@
 
 #include "utils_io.hpp"
 #include "utils_math.hpp"
+#include "utils_voropp.hpp"
 
 #define BOU_TYPE_UNDEFINED -1
 #define BOU_TYPE_WALL 0
@@ -108,7 +109,7 @@ struct VoronoiCell
     int id;
     std::vector<int> nbr;
     double centroid[3];
-    
+
     std::vector<int> f_conn, f_ori;
     std::vector<int> ed_conn, ed_ori;
     std::vector<int> v_conn;
@@ -256,6 +257,11 @@ struct Mesh
     void init_voronoi_faces();
     // ================================================================
 
+    // AUXILIARY METHODS ==============================================
+    int get_new_id() const;
+    int get_cell_index(const int id) const;
+    // ================================================================
+
     // BUILD MESH: BASE ===============================================
     void build(const int dim, const double mesh_size);
     // ================================================================
@@ -270,6 +276,12 @@ struct Mesh
 
     // BUILD MESH: FOR BOUNDARY ELEMENT METHODS =======================
     void build_for_BEM(const int dim, const double mesh_size);
+    // ================================================================
+
+    // CUT CELL =======================================================
+    void cut_cell_by_point_and_plane(const int id, const double * P, const double * un);
+    void cut_cell_by_vector(const int id, const double * V);
+    void cut_cell_by_plane(const int id, const double * plane);
     // ================================================================
 
     // UPDATE MESH ====================================================

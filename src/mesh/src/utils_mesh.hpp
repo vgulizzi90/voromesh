@@ -25,6 +25,12 @@ void sd_points_polygon(const std::vector<double> & vertices,
 // ####################################################################
 
 // COMPUTE THE MESH OF A POLYGON ######################################
+void triangulate_polygon(const std::vector<double> & vertices,
+                         std::vector<double> & nodes,
+                         std::vector<int> & triangles,
+                         std::vector<int> & edges,
+                         const double tol);
+
 void mesh_polygon(const double mesh_size,
                   const std::vector<double> & vertices,
                   const std::vector<double> & boundary_nodes,

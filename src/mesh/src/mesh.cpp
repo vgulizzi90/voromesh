@@ -734,6 +734,62 @@ void Mesh::init_voronoi_cells(const std::vector<int> & ids)
 }
 // ====================================================================
 
+// AUXILIARY METHODS ==================================================
+int Mesh::get_new_id() const
+{
+    // PARAMETERS -------------------------
+    const int n_cells = this->cells.size();
+    // ------------------------------------
+
+    // VARIABLES
+    int id = 0;
+    // ---------
+
+    // LOOP OVER THE CELLS ------------------
+    for (int c = 0; c < n_cells; ++c)
+    {
+        id = std::max(id, this->cells[c].id);
+    }
+    // --------------------------------------
+
+    return (id+1);
+}
+
+int Mesh::get_cell_index(const int id) const
+{
+    // PARAMETERS -------------------------
+    const int n_cells = this->cells.size();
+    // ------------------------------------
+
+    // SEARCH FOR THE CELL WITH MATCHING ID ---------------------------
+    int c = 0;
+    bool found = false;
+
+    while (!found && c < n_cells)
+    {
+        if (this->cells[c].id == id)
+        {
+            found = true;
+        }
+        else
+        {
+            c += 1;
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // SEND A WARNING IN CASE THE CELL COULD NOT BE FOUND -------------
+    if (!found)
+    {
+        io::warning("mesh.cpp - get_cell_index",
+                    "Could not find the cell with id: "+std::to_string(id));
+    }
+    // ----------------------------------------------------------------
+
+    return c;
+}
+// ====================================================================
+
 // INITIALIZATION: VORONOI FACES ======================================
 void Mesh::init_voronoi_faces()
 {
@@ -1072,7 +1128,7 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
                         if (!found)
                         {
                             io::error("mesh.cpp - Mesh::export_vtk",
-                                    "Could not find a face' edge.");
+                                      "Could not find a face' edge.");
                         }
                     }
                 }
@@ -1355,7 +1411,7 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
             aux_offset += 4;
 
             // Parent geometrical entity
-            this->parents.push_back(c);
+            this->parents.push_back(cell.id);
         }
 
         // Modify the connectivity of the cell
@@ -1400,6 +1456,201 @@ void Mesh::build_cell_based(const int dim, const double mesh_size)
 }
 // ====================================================================
 
+// CUT CELL ===========================================================
+void Mesh::cut_cell_by_vector(const int id, const double * V)
+{
+    const int c = this->get_cell_index(id);
+    const double * C = &this->seeds[3*c];
+    const double plane[4] = {V[0], V[1], V[2], -(V[0]*C[0]+V[1]*C[1]+V[2]*C[2])};
+    this->cut_cell_by_plane(id, plane);
+}
+
+void Mesh::cut_cell_by_plane(const int id, const double * plane)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int c = this->get_cell_index(id);
+    const int n_cells = this->cells.size();
+    const double * S = &this->seeds[3*c];
+    const double tmp = 1.0/math::L2_norm(plane, 3);
+    const double un[3] = {plane[0]*tmp, plane[1]*tmp, plane[2]*tmp};
+    const double ud = plane[3]*tmp;
+    const double dist = -(ud+un[0]*S[0]+un[1]*S[1]+un[2]*S[2]);
+
+    // ID FOR THE NEXT CELL (IF ANY)
+    const int new_id = this->get_new_id();
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    voro::voronoicell_neighbor * cut_vc = this->vc_ptrs[c];
+    voro::voronoicell_neighbor * new_vc;
+    bool cut_vc_exists, other_cut_vc_exists;
+    // ----------------------------------------------------------------
+
+    // CREATE A NEW VORO++ CELL AS A COPY OF THE CELL TO BE CUT -------
+    new_vc = new voro::voronoicell_neighbor();
+    *new_vc = *cut_vc;
+    // ----------------------------------------------------------------
+
+    // CUT THE CELLS --------------------------------------------------
+    cut_vc_exists = cut_vc->nplane(un[0], un[1], un[2], 2.0*dist, new_id);
+    if (cut_vc_exists)
+    {
+        other_cut_vc_exists = new_vc->nplane(-un[0], -un[1], -un[2], -2.0*dist, id);
+    }
+    // ----------------------------------------------------------------
+
+    // THE CELL HAS BEEN CUT OR LEFT UNMODIFIED -----------------------
+    if (cut_vc_exists)
+    {
+        // LOCATE ALL NEIGHBORS THAT TOUCH THE CUTTING PLANE
+        int ii, jj;
+        if (voro_utils::find_face(*cut_vc, ii, jj, new_id))
+        {
+            io::error("mesh.cpp - cut_cell_by_plane",
+                      "Error locating cut face");
+        }
+        std::vector<int> cut_nbr;
+        voro_utils::face_neighbors(*cut_vc, ii, jj, new_id, cut_nbr);
+        const int n_cut_nbr = cut_nbr.size();
+        
+        // LOOP OVER ALL THE TOUCHING NEIGHBORS AND SPLIT THE FACE THAT
+        // TOUCHES THE CUTTING PLANE
+        for (int cn = 0; cn < n_cut_nbr; ++cn)
+        {
+            // Skip the walls
+            if (cut_nbr[cn] < 0)
+            {
+
+            }
+            else
+            {
+                const int cut_nbr_c = this->get_cell_index(cut_nbr[cn]);
+
+                voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[cut_nbr_c];
+
+                const double * nbr_S = &this->seeds[3*cut_nbr_c];
+                const double nbr_dist = -(ud+un[0]*nbr_S[0]+un[1]*nbr_S[1]+un[2]*nbr_S[2]);
+
+                // Perform the splitting and check the edge relation info is
+                // correct
+                voro_utils::split_face(*nbr_vc, id, new_id,
+                                       un[0], un[1], un[2], 2.0*nbr_dist);
+                nbr_vc->check_relations();
+            }
+        }
+
+        // UPDATE THE OTHER VORO++ CELL
+        if (other_cut_vc_exists)
+        {
+            // Get the current neighbors
+            std::vector<int> nbr;
+            new_vc->neighbors(nbr);
+
+            // Loop over the neighbors of the other voro++ cell and
+            // update the neighboring information of the faces
+            const int n_nbr = nbr.size();
+            for (int n = 0; n < n_nbr; ++n)
+            {
+                const int nbr_id = nbr[n];
+
+                // Skip the walls or the original cell
+                if ((nbr_id < 0) || (nbr_id == id))
+                {
+                    continue;
+                }
+
+                // Skip those cells whose faces have been cut
+                bool found = false;
+                for (int cn = 0; cn < n_cut_nbr; ++cn)
+                {
+                    if (nbr_id == cut_nbr[cn])
+                    {
+                        found = true;
+                    }
+                }
+                if (found)
+                {
+                    continue;
+                }
+
+                // Update remaining
+                const int nbr_c = this->get_cell_index(nbr_id);
+                voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[nbr_c];
+
+                for (int v = 0; v < nbr_vc->p; ++v)
+                {
+                    for (int f = 0; f < nbr_vc->nu[v]; ++f)
+                    {
+                        if (nbr_vc->ne[v][f] == id)
+                        {
+                            nbr_vc->ne[v][f] = new_id;
+                        }
+                    }  
+                }
+                nbr_vc->check_relations();
+            }
+        }
+    }
+    // THE CELL HAS BEEN DELETED --------------------------------------
+    else
+    {
+io::error("mesh.cpp - cut_cell_by_plane", "THE CELL HAS BEEN DELETED");
+    }
+    // ----------------------------------------------------------------
+
+    // UPDATE THE vc_ptr VECTOR ---------------------------------------
+    if (cut_vc_exists)
+    {
+        if (other_cut_vc_exists)
+        {
+            this->vc_ptrs.push_back(new_vc);
+        }
+    }
+    else
+    {
+
+io::error("mesh.cpp - cut_cell_by_plane", "THE CELL HAS BEEN DELETED");
+    }
+    // ----------------------------------------------------------------
+
+    // UPDATE THE seeds VECTOR ----------------------------------------
+    if (cut_vc_exists)
+    {
+        if (other_cut_vc_exists)
+        {
+            this->seeds.push_back(S[0]);
+            this->seeds.push_back(S[1]);
+            this->seeds.push_back(S[2]);
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // UPDATE TOLERANCE -----------------------------------------------
+    if (cut_vc_exists)
+    {
+        this->init_tolerance();
+    }
+    // ----------------------------------------------------------------
+
+    // RECOMPUTE THE VORONOI CELLS AND FACES --------------------------
+    if (cut_vc_exists)
+    {
+        if (other_cut_vc_exists)
+        {
+            std::vector<int> ids(n_cells+1);
+            for (int c = 0; c < n_cells; ++c)
+            {
+                ids[c] = this->cells[c].id;
+            }
+            ids[n_cells] = new_id;
+            this->init_voronoi_cells(ids);
+            this->init_voronoi_faces();
+        }
+    }
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+
 // EXPORT TO VTK FORMAT ===============================================
 void Mesh::export_vtk(const std::string & filepath)
 {
@@ -1411,7 +1662,8 @@ void Mesh::export_vtk(const std::string & filepath)
     std::vector<std::string> VTK_cell_fields_name = 
     {
         "DIM",
-        "PARENT"
+        "PARENT",
+        "GHOST"
     };
     const int n_cell_fields = VTK_cell_fields_name.size();
     // ----------------------------------------------------------------
@@ -1548,6 +1800,9 @@ void Mesh::export_vtk(const std::string & filepath)
 
         // PARENT
         VTK_cell_fields[1][e] = this->parents[e];
+
+        // GHOST
+        VTK_cell_fields[2][e] = this->ghost[e];
     }
     // ----------------------------------------------------------------
 

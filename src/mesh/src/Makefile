@@ -13,6 +13,7 @@ cpp_src := utils_io.cpp \
 	utils_vtk.cpp \
 	utils_math.cpp \
 	utils_mesh.cpp \
+	utils_voropp.cpp \
 	mesh.cpp
 cpp_obj := $(patsubst %.cpp,%.o,$(cpp_src))
 

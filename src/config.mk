@@ -1,2 +1,2 @@
-VORO_DIR := voro
+VORO_DIR := voro_old
 MESH_DIR := mesh

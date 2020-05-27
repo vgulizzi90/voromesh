@@ -39,7 +39,7 @@ int main()
     const bool p3 = false;
 
     // Number of particles
-    const int n_particles = 20;
+    const int n_particles = 734;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -67,11 +67,38 @@ int main()
     msh.init(con);
 
     // BUILD THE MESH
-    msh.build(3, 1.0);
+    msh.build(3, 0.075);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh.vtu");
+    // -----------------------------------------------------
 
-    //msh.cut_cell(0, 2.0, 0.0, 0.0, 1.0);
+    // PERFORM FIRST CUT --------------------------
+    {
+        const int id = 325;
+        const double un[3] = {rnd(), rnd(), rnd()};
+        msh.cut_cell_by_vector(id, un);
+    }
+
+    // BUILD THE MESH
+    msh.build(3, 0.075);
+
+    // EXPORT TO VTK FORMAT
+    msh.export_vtk("mesh-2.vtu");
+    // --------------------------------------------
+
+    // PERFORM SECOND CUT ON THE NEWLY ADDED CELL -
+    {
+        const int id = n_particles;
+        const double un[3] = {rnd(), rnd(), rnd()};
+        msh.cut_cell_by_vector(id, un);
+    }
+
+    // BUILD THE MESH
+    msh.build(3, 0.075);
+
+    // EXPORT TO VTK FORMAT
+    msh.export_vtk("mesh-3.vtu");
+    // --------------------------------------------
 }
 // ====================================================================

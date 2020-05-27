@@ -1,5 +1,5 @@
 SRC_DIR := ../../../src
-VORO_DIR := $(SRC_DIR)/voro
+VORO_DIR := $(SRC_DIR)/voro_old
 MESH_DIR := $(SRC_DIR)/mesh
 
 I_VORO := -I$(VORO_DIR)/src

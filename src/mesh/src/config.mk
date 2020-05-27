@@ -1,7 +1,7 @@
 SRC_DIR := .
 BUILD_DIR := .
 
-VORO_DIR := ../../voro
+VORO_DIR := ../../voro_old
 TRIANGLE_DIR := ../triangle
 TETGEN_DIR := ../tetgen
 

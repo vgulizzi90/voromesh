@@ -565,6 +565,62 @@ void Mesh::free()
 }
 // ====================================================================
 
+// AUXILIARY METHODS ==================================================
+int Mesh::get_new_id() const
+{
+    // PARAMETERS -------------------------
+    const int n_cells = this->cells.size();
+    // ------------------------------------
+
+    // VARIABLES
+    int id = 0;
+    // ---------
+
+    // LOOP OVER THE CELLS ------------------
+    for (int c = 0; c < n_cells; ++c)
+    {
+        id = std::max(id, this->cells[c].id);
+    }
+    // --------------------------------------
+
+    return (id+1);
+}
+
+int Mesh::get_cell_index(const int id) const
+{
+    // PARAMETERS -------------------------
+    const int n_cells = this->cells.size();
+    // ------------------------------------
+
+    // SEARCH FOR THE CELL WITH MATCHING ID ---------------------------
+    int c = 0;
+    bool found = false;
+
+    while (!found && c < n_cells)
+    {
+        if (this->cells[c].id == id)
+        {
+            found = true;
+        }
+        else
+        {
+            c += 1;
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // SEND A WARNING IN CASE THE CELL COULD NOT BE FOUND -------------
+    if (!found)
+    {
+        io::warning("mesh.cpp - get_cell_index",
+                    "Could not find the cell with id: "+std::to_string(id));
+    }
+    // ----------------------------------------------------------------
+
+    return c;
+}
+// ====================================================================
+
 // INITIALIZATION: TOLERANCE ==========================================
 void Mesh::init_tolerance(const double rel_tol)
 {
@@ -708,69 +764,15 @@ void Mesh::init_voronoi_cells(const std::vector<int> & ids)
 
                 if (!found)
                 {
-                    io::error("mesh.cpp - Mesh::init_voronoi_cells",
-                              "The neighbor cells information is not consistent.");
+                    std::string msg = "The neighbor cells information is not consistent:\n";
+                    msg += "| current cell id: "+std::to_string(cell.id)+";\n";
+                    msg += "| neighbor cell id: "+std::to_string(nbr_id)+".\n";
+                    io::error("mesh.cpp - Mesh::init_voronoi_cells", msg);
                 }
             }
         }
     }
     // ----------------------------------------------------------------
-}
-// ====================================================================
-
-// AUXILIARY METHODS ==================================================
-int Mesh::get_new_id() const
-{
-    // PARAMETERS -------------------------
-    const int n_cells = this->cells.size();
-    // ------------------------------------
-
-    // VARIABLES
-    int id = 0;
-    // ---------
-
-    // LOOP OVER THE CELLS ------------------
-    for (int c = 0; c < n_cells; ++c)
-    {
-        id = std::max(id, this->cells[c].id);
-    }
-    // --------------------------------------
-
-    return (id+1);
-}
-
-int Mesh::get_cell_index(const int id) const
-{
-    // PARAMETERS -------------------------
-    const int n_cells = this->cells.size();
-    // ------------------------------------
-
-    // SEARCH FOR THE CELL WITH MATCHING ID ---------------------------
-    int c = 0;
-    bool found = false;
-
-    while (!found && c < n_cells)
-    {
-        if (this->cells[c].id == id)
-        {
-            found = true;
-        }
-        else
-        {
-            c += 1;
-        }
-    }
-    // ----------------------------------------------------------------
-
-    // SEND A WARNING IN CASE THE CELL COULD NOT BE FOUND -------------
-    if (!found)
-    {
-        io::warning("mesh.cpp - get_cell_index",
-                    "Could not find the cell with id: "+std::to_string(id));
-    }
-    // ----------------------------------------------------------------
-
-    return c;
 }
 // ====================================================================
 
@@ -878,8 +880,53 @@ void Mesh::init_voronoi_faces()
 
                     if (!found)
                     {
-                        io::error("mesh.cpp - Mesh::init_voronoi_faces",
-                                "The neighbor cells information is not consistent.");
+                        std::string msg = "The neighbor cells information is not consistent:\n";
+                        msg += "| current cell:\n";
+                        msg += "| - id(index): "+std::to_string(cell.id)+"("+std::to_string(c)+");\n";
+                        msg += "| - nbr:"; for (int i = 0; i < n_nbr; ++i) msg += " "+std::to_string(cell.nbr[i])+((i == f) ? "*" : ""); msg += ";\n";
+                        msg += "| - faces:"; for (int i = 0; i < n_cell_faces; ++i) msg += " "+std::to_string(cell.f_conn[i])+((i == f) ? "*" : ""); msg += ";\n";
+                        
+                        const VoronoiCell & nbr_cell = this->cells[nbr_c];
+                        const int nbr_n_nbr = nbr_cell.nbr.size();
+                        const int nbr_n_cell_faces = nbr_cell.f_conn.size();
+                        msg += "| neighbor cell:\n";
+                        msg += "| - id(index): "+std::to_string(nbr_cell.id)+"("+std::to_string(nbr_c)+");\n";
+                        msg += "| - nbr:"; for (int i = 0; i < nbr_n_nbr; ++i) msg += " "+std::to_string(nbr_cell.nbr[i]); msg += ";\n";
+                        msg += "| - faces:"; for (int i = 0; i < nbr_n_cell_faces; ++i) msg += " "+std::to_string(nbr_cell.f_conn[i]); msg += ";\n";
+
+                        msg += "| current face:\n";
+                        msg += "| - index: "+std::to_string(f)+";\n";
+                        io::warning("mesh.cpp - Mesh::init_voronoi_faces",
+                                     msg);
+                        
+                        cell.nbr[f] = WALL_ID_BAD_NEIGHBOR;
+                        
+                        // CREATE A FACE
+                        VoronoiFace face;
+
+                        // Set the face type (as a boundary)
+                        face.bou_type = BOU_TYPE_BAD_NEIGHBOR;
+
+                        // Set the parent cells
+                        face.parent_cells[0] = c;
+                        face.parent_cells[1] = WALL_ID_BAD_NEIGHBOR;
+
+                        // Eval a local reference system
+                        face.eval_RS(ver.data(), face_vertices[face_vertices_pos], &face_vertices[face_vertices_pos+1]);
+
+                        // Store the index in the cell's face connectivity
+                        cell.f_conn[f] = this->faces.size();
+
+                        // Store the orientation of the face
+                        const double * V0 = &ver[3*face_vertices[face_vertices_pos+1]];
+                        const double * CC = cell.centroid;
+                        const double CV[3] = {V0[0]-CC[0], V0[1]-CC[1], V0[2]-CC[2]};
+                        const double fn[3] = {face.R[2+3*0], face.R[2+3*1], face.R[2+3*2]};
+                        const double tmp = CV[0]*fn[0]+CV[1]*fn[1]+CV[2]*fn[2];
+                        cell.f_ori[f] = (tmp > 0.0) ? +1 : -1;
+
+                        // Push the face
+                        this->faces.push_back(face);
                     }
                 }
 

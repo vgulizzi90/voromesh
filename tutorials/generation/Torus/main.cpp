@@ -4,6 +4,8 @@
 #include <iostream>
 #include <voro++.hh>
 #include <voromesh++.hpp>
+
+#include <cmath>
 // ====================================================================
 
 
@@ -35,6 +37,45 @@ public voro::wall
     id(id_)
     {}
     // ================================================================
+
+    // CHECK WHETHER A POINT IS INSIDE ================================
+    bool point_inside(double X1, double X2, double X3)
+    {
+        const double RX = std::sqrt(X1*X1+X2*X2);
+        const double r2 = this->r*this->r;
+        const double tmp = RX-this->R;
+        return ((tmp*tmp+X3*X3) < r2);
+    }
+    // ================================================================
+
+    // WALL CUT =======================================================
+    template <class VC>
+    inline bool cut_cell_base(VC & vc, double X1, double X2, double X3)
+    {
+        const double RX = std::sqrt(X1*X1+X2*X2);
+        double ds = RX-this->R;
+        double dst = ds*ds+X3*X3;
+        if (dst > 0.01*this->r)
+        {
+            dst = 2.0*this->r/std::sqrt(dst)-2.0;
+            X3 *= dst;
+            ds *= dst/RX;
+            X1 *= ds;
+            X2 *= ds;
+            return vc.nplane(X1, X2, X3, this->id);
+        }
+        return true;
+    }
+
+    bool cut_cell(voro::voronoicell & vc, double X1, double X2, double X3)
+    {
+        return cut_cell_base(vc, X1, X2, X3);
+    }
+    bool cut_cell(voro::voronoicell_neighbor & vc, double X1, double X2, double X3)
+    {
+        return cut_cell_base(vc, X1, X2, X3);
+    }
+    // ================================================================
 };
 // ####################################################################
 
@@ -50,8 +91,8 @@ int main()
     const double oR = R+r;
 
     // Container geometry parameters
-    const double L = 1.1*oR;
-    const double H = 1.1*r;
+    const double L = oR+0.5;
+    const double H = r+0.5;
 
     const double X1L = -L;
     const double X1U = +L;
@@ -61,22 +102,17 @@ int main()
     const double X3U = +H;
 
     // Container blocks
-    const int nb1 = 9;
-    const int nb2 = 9;
+    const int nb1 = 10;
+    const int nb2 = 10;
     const int nb3 = 3;
 
     // Periodic flags
     const bool p1 = false;
     const bool p2 = false;
     const bool p3 = false;
-
-    // Number of particles
-    const int n_particles = 734;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
-    double x1, x2, x3;
-
     voro::container con(X1L, X1U, X2L, X2U, X3L, X3U,
                         nb1, nb2, nb3,
                         p1, p2, p3,
@@ -85,21 +121,20 @@ int main()
     voromesh::Mesh msh;
     // ----------------------------------------------------------------
 
-    // PLACE THE PARTICLES --------------------------------------------
-    for (int i = 0; i < n_particles; ++i)
-    {
-        x1 = X1L+rnd()*(X1U-X1L);
-        x2 = X2L+rnd()*(X2U-X2L);
-        x3 = X3L+rnd()*(X3U-X3L);
-        con.put(i, x1, x2, x3);
-    }
-    // ----------------------------------------------------------------
+    // ADD THE WALL TO THE CONTAINER
+    wall_torus tor(R, r);
+    con.add_wall(tor);
+    // -----------------------------
+
+    // IMPORT PARTICLES FROM FILE
+	con.import("pack_torus.txt");
+    // --------------------------
 
     // INITIALIZE THE MESH WITH THE TESSELLATION INFORMATION
     msh.init(con);
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.4);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh.vtu");

@@ -4,6 +4,8 @@
 #include <iostream>
 #include <voro++.hh>
 #include <voromesh++.hpp>
+
+#include <cmath>
 // ====================================================================
 
 
@@ -16,72 +18,64 @@ double rnd()
 // ====================================================================
 
 
+
 // MAIN ===============================================================
 int main()
 {
     // CONSTANTS ------------------------------------------------------
-    // Container geometry parameters
-    const double X1L = -1.0;
-    const double X1U = +1.0;
-    const double X2L = -1.0;
-    const double X2U = +1.0;
-    const double X3L = -1.0;
-    const double X3U = +1.0;
-
-    // Container blocks
-    const int nb1 = 6;
-    const int nb2 = 6;
-    const int nb3 = 6;
-
-    // Periodic flags
-    const bool p1 = false;
-    const bool p2 = false;
-    const bool p3 = false;
-
-    // Number of particles
-    const int n_particles = 734;
+    // Number of planes
+    const int n_planes = 250;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
-    double X1, X2, X3;
-
-    voro::container con(X1L, X1U, X2L, X2U, X3L, X3U,
-                        nb1, nb2, nb3,
-                        p1, p2, p3,
-                        8);
+    double X1, X2, X3, r, rsq;
+    
+    voro::voronoicell_neighbor vc;
     
     voromesh::Mesh msh;
     // ----------------------------------------------------------------
 
-    // PLACE THE PARTICLES --------------------------------------------
-    for (int i = 0; i < n_particles; ++i)
+    // INITIALIZE THE VORO++ CELL AS A CUBE ---------------------------
+    vc.init(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
+    // ----------------------------------------------------------------
+
+    // CUT THE CELL BY n_planes RANDOM PLANES -------------------------
+    for (int i = 0; i < n_planes; ++i)
     {
-        X1 = X1L+rnd()*(X1U-X1L);
-        X2 = X2L+rnd()*(X2U-X2L);
-        X3 = X3L+rnd()*(X3U-X3L);
-        con.put(i, X1, X2, X3);
+        X1 = 2.0*rnd()-1.0;
+        X2 = 2.0*rnd()-1.0;
+        X3 = 2.0*rnd()-1.0;
+        rsq = X1*X1+X2*X2+X3*X3;
+        if ((rsq > 0.01) && (rsq < 1.0))
+        {
+            r = 1.0/std::sqrt(rsq);
+            X1 *= r;
+            X2 *= r;
+            X3 *= r;
+            vc.nplane(X1, X2, X3, 1.0, -(i+1));
+        }
     }
     // ----------------------------------------------------------------
 
-    // INITIALIZE THE MESH WITH THE TESSELLATION INFORMATION
-    msh.init(con);
+    // ADD THE CELL ------------
+    msh.add_vc(vc, 0);
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.05);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh.vtu");
-    // -----------------------------------------------------
+    // ------------------------
 
     // PERFORM FIRST CUT --------------------------
     {
-        const int id = 325;
+        const int id = 0;
         const double un[3] = {rnd(), rnd(), rnd()};
         msh.cut_cell_by_vector(id, un);
     }
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.05);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh-2.vtu");
@@ -89,13 +83,13 @@ int main()
 
     // PERFORM SECOND CUT ON THE NEWLY ADDED CELL -
     {
-        const int id = n_particles;
+        const int id = 1;
         const double un[3] = {rnd(), rnd(), rnd()};
         msh.cut_cell_by_vector(id, un);
     }
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.05);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh-3.vtu");

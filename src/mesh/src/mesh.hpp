@@ -15,6 +15,9 @@
 #define BOU_TYPE_INTERFACE 1
 #define BOU_TYPE_PERIODIC 2
 
+#define BOU_TYPE_BAD_NEIGHBOR -1010
+#define WALL_ID_BAD_NEIGHBOR -1010
+
 namespace voromesh
 {
 // VORONOI VERTEX CLASS ###############################################
@@ -245,6 +248,69 @@ struct Mesh
     }
     // ================================================================
 
+    // ADD VORO++ CELL ================================================
+    template<class VC>
+    void add_vc(VC & vc, const int new_id)
+    {
+        // PARAMETERS -------------------------
+        const int n_cells = this->cells.size();
+        // ------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        voro::voronoicell_neighbor * new_vc;
+        bool new_vc_is_valid;
+        // ------------------------------------------------------------
+
+        // CREATE A NEW VORO++ CELL -----------------------------------
+        new_vc = new voro::voronoicell_neighbor();
+        *new_vc = vc;
+        new_vc_is_valid = (new_vc != nullptr);
+        // ------------------------------------------------------------
+
+        // UPDATE THE vc_ptr VECTOR --------
+        if (new_vc_is_valid)
+        {
+            this->vc_ptrs.push_back(new_vc);
+        }
+        // ---------------------------------
+
+        // UPDATE THE seeds VECTOR ----
+        if (new_vc_is_valid)
+        {
+            this->seeds.push_back(0.0);
+            this->seeds.push_back(0.0);
+            this->seeds.push_back(0.0);
+        }
+        // ----------------------------
+
+        // UPDATE TOLERANCE -------
+        if (new_vc_is_valid)
+        {
+            this->init_tolerance();
+        }
+        // ------------------------
+
+        // RECOMPUTE THE VORONOI CELLS AND FACES
+        if (new_vc_is_valid)
+        {
+            std::vector<int> ids(n_cells+1);
+            for (int c = 0; c < n_cells; ++c)
+            {
+                ids[c] = this->cells[c].id;
+            }
+            ids[n_cells] = new_id;
+            this->init_voronoi_cells(ids);
+            this->init_voronoi_faces();
+        }
+        // -------------------------------------
+    }
+    // ================================================================
+
+    // AUXILIARY METHODS ==============================================
+    int get_new_id() const;
+    int get_cell_index(const int id) const;
+    // ================================================================
+
     // INITIALIZATION: TOLERANCE ======================================
     void init_tolerance(const double rel_tol = 1.0e-5);
     // ================================================================
@@ -255,11 +321,6 @@ struct Mesh
 
     // INITIALIZATION: VORONOI FACES ==================================
     void init_voronoi_faces();
-    // ================================================================
-
-    // AUXILIARY METHODS ==============================================
-    int get_new_id() const;
-    int get_cell_index(const int id) const;
     // ================================================================
 
     // BUILD MESH: BASE ===============================================
@@ -279,7 +340,6 @@ struct Mesh
     // ================================================================
 
     // CUT CELL =======================================================
-    void cut_cell_by_point_and_plane(const int id, const double * P, const double * un);
     void cut_cell_by_vector(const int id, const double * V);
     void cut_cell_by_plane(const int id, const double * plane);
     // ================================================================

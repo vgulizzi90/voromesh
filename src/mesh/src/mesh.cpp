@@ -94,23 +94,7 @@ void VoronoiEdge::build_mesh(const double mesh_size,
 
         conn[2*(n_elems-1)+0] = n_elems;
         conn[2*(n_elems-1)+1] = 1;
-
-        /* DEBUG
-        if ((std::abs(dV[1]) < 1.0e-5) and (std::abs(dV[2]) < 1.0e-5))
-        {
-            std::cout << "dV: "; math::matrix::print_inline(3, dV); std::cout << std::endl;
-            std::cout << "A: "; math::matrix::print_inline(3, A); std::cout << std::endl;
-            std::cout << "B: "; math::matrix::print_inline(3, B); std::cout << std::endl;
-            const int n_nodes = (n_elems+1);
-            std::cout << "nodes: " << std::endl;
-            for (int n = 0; n < n_nodes; ++n)
-            {
-                math::matrix::print_inline(3, &nodes[3*n]); std::cout << std::endl;
-            }
-
-            io::error("mesh.cpp - VoronoiEdge::build_mesh", "HERE WE ARE");
-        }
-        */
+        
     }
     else
     {

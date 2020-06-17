@@ -13,8 +13,8 @@ CC_FLAGS := -Wall -ansi -pedantic -O3
 CC_DEFS :=
 
 CXX := g++
-CXX_FLAGS := -Wall -ansi -pedantic -O3 -std=c++11
-CXX_FLAGS_DBG := -Wall -ansi -pedantic -O0 -std=c++11
+CXX_FLAGS := -Wall -ansi -pedantic -Wshadow -O3 -std=c++11
+CXX_FLAGS_DBG := -Wall -ansi -pedantic -Wshadow -O0 -std=c++11
 CXX_DEFS := 
 
 I_VORO := -I$(VORO_DIR)/src

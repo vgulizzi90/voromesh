@@ -67,7 +67,7 @@ int main()
     msh.init(con);
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.1);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh.vtu");
@@ -81,7 +81,7 @@ int main()
     }
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.1);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh-2.vtu");
@@ -95,7 +95,7 @@ int main()
     }
 
     // BUILD THE MESH
-    msh.build(3, 0.075);
+    msh.build(3, 0.1);
 
     // EXPORT TO VTK FORMAT
     msh.export_vtk("mesh-3.vtu");

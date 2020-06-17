@@ -23,6 +23,9 @@ double rnd()
 int main()
 {
     // CONSTANTS ------------------------------------------------------
+    // ID of the particles
+    const int id = 0;
+
     // Number of planes
     const int n_planes = 250;
     // ----------------------------------------------------------------
@@ -58,7 +61,7 @@ int main()
     // ----------------------------------------------------------------
 
     // ADD THE CELL ------------
-    msh.add_vc(vc, 0);
+    msh.add_vc(vc, id);
 
     // BUILD THE MESH
     msh.build(3, 0.05);
@@ -69,7 +72,6 @@ int main()
 
     // PERFORM FIRST CUT --------------------------
     {
-        const int id = 0;
         const double un[3] = {rnd(), rnd(), rnd()};
         msh.cut_cell_by_vector(id, un);
     }
@@ -83,9 +85,8 @@ int main()
 
     // PERFORM SECOND CUT ON THE NEWLY ADDED CELL -
     {
-        const int id = 1;
         const double un[3] = {rnd(), rnd(), rnd()};
-        msh.cut_cell_by_vector(id, un);
+        msh.cut_cell_by_vector(id+1, un);
     }
 
     // BUILD THE MESH

@@ -253,27 +253,6 @@ void VoronoiFace::build_mesh(const double mesh_size,
         projected_face_vertices_2d[2*n+0] = projected_face_vertices[3*n+0];
         projected_face_vertices_2d[2*n+1] = projected_face_vertices[3*n+1];
     }
-
-    /* DEBUG
-    std::cout << std::endl;
-    std::cout << "R: " << std::endl;
-    for (int n = 0; n < 3; ++n)
-    {
-        std::cout << this->R[n+3*0] << ", " << this->R[n+3*1] << ", " << this->R[n+3*2] << std::endl;
-    }
-
-    std::cout << std::endl;
-    for (int n = 0; n < n_face_vertices; ++n)
-    {
-        math::matrix::print_inline(3, &face_vertices[3*n]); std::cout << std::endl;
-    }
-
-    std::cout << std::endl;
-    for (int n = 0; n < n_face_vertices; ++n)
-    {
-        math::matrix::print_inline(3, &projected_face_vertices[3*n]); std::cout << std::endl;
-    }
-    */
     // ----------------------------------------------------------------
 
     // GATHER THE BOUNDARY NODES --------------------------------------
@@ -314,14 +293,6 @@ void VoronoiFace::build_mesh(const double mesh_size,
 
     n_boundary_nodes = nodes.size()/3;
 
-    /* DEBUG
-    std::cout << "bou_nodes:" << std::endl;
-    for (int n = 0; n < n_boundary_nodes; ++n)
-    {
-        std::cout << bou_nodes[n] << std::endl;
-    }
-    */
-
     // PROJECT THE BOUNDARY NODES ONTO THE FACE LOCAL REF SYSTEM
     projected_nodes.resize(nodes.size());
     math::matrix::multiply(3, 3, n_boundary_nodes, this->R, nodes.data(), projected_nodes.data());
@@ -333,20 +304,6 @@ void VoronoiFace::build_mesh(const double mesh_size,
         projected_nodes_2d[2*n+0] = projected_nodes[3*n+0];
         projected_nodes_2d[2*n+1] = projected_nodes[3*n+1];
     }
-
-    /* DEBUG
-    std::cout << std::endl;
-    for (int n = 0; n < n_boundary_nodes; ++n)
-    {
-        math::matrix::print_inline(3, &nodes[3*n]); std::cout << std::endl;
-    }
-
-    std::cout << std::endl;
-    for (int n = 0; n < n_boundary_nodes; ++n)
-    {
-        math::matrix::print_inline(3, &projected_nodes[3*n]); std::cout << std::endl;
-    }
-    */
     // ----------------------------------------------------------------
 
     // MESH THE POLYGONAL AREA ----------------------------------------
@@ -380,7 +337,9 @@ void VoronoiFace::build_mesh(const double mesh_size,
 // CONSTRUCTOR ========================================================
 VoronoiCell::VoronoiCell()
 :
-state(0)
+state(0),
+id(-1),
+centroid{0.0, 0.0, 0.0}
 {
 
 }
@@ -487,21 +446,19 @@ void VoronoiCell::build_mesh(const double mesh_size,
                                     boundary_nodes, boundary_conn,
                                     nodes, conn);
     // ----------------------------------------------------------------
+}
+// ====================================================================
+// ####################################################################
 
-    /* DEBUG
-    std::cout << std::endl;
-    for (int n = 0; n < n_boundary_nodes; ++n)
-    {
-        math::matrix::print_inline(3, &boundary_nodes[3*n]); std::cout << std::endl;
-    }
-    */
-    /* DEBUG
-    std::cout << std::endl;
-    for (int n = 0; n < n_boundary_triangles; ++n)
-    {
-        math::matrix::print_inline_int(3, &boundary_conn[3*n]); std::cout << std::endl;
-    }
-    */
+
+
+// VORONOI WALL CLASS #################################################
+// CONSTRUCTOR ========================================================
+VoronoiWall::VoronoiWall()
+:
+state(0),
+id(-1)
+{
 }
 // ====================================================================
 // ####################################################################
@@ -586,13 +543,33 @@ int Mesh::get_new_id() const
     return (id+1);
 }
 
-int Mesh::get_cell_index(const int id) const
+int Mesh::get_new_wall_id() const
+{
+    // PARAMETERS -------------------------
+    const int n_walls = this->walls.size();
+    // ------------------------------------
+
+    // VARIABLES
+    int id = 0;
+    // ---------
+
+    // LOOP OVER THE CELLS ------------------
+    for (int w = 0; w < n_walls; ++w)
+    {
+        id = std::max(id, this->walls[w].id);
+    }
+    // --------------------------------------
+
+    return (id+1);
+}
+
+int Mesh::get_cell_index(const int id, const int verbosity) const
 {
     // PARAMETERS -------------------------
     const int n_cells = this->cells.size();
     // ------------------------------------
 
-    // SEARCH FOR THE CELL WITH MATCHING ID ---------------------------
+    // SEARCH FOR THE CELL WITH MATCHING ID
     int c = 0;
     bool found = false;
 
@@ -607,17 +584,51 @@ int Mesh::get_cell_index(const int id) const
             c += 1;
         }
     }
-    // ----------------------------------------------------------------
+    // ------------------------------------
 
     // SEND A WARNING IN CASE THE CELL COULD NOT BE FOUND -------------
-    if (!found)
+    if ((!found) && (verbosity > 0))
     {
-        io::warning("mesh.cpp - get_cell_index",
+        io::warning("mesh.cpp - Mesh::get_cell_index",
                     "Could not find the cell with id: "+std::to_string(id));
     }
     // ----------------------------------------------------------------
 
     return c;
+}
+
+int Mesh::get_wall_index(const int wall_id, const int verbosity) const
+{
+    // PARAMETERS -------------------------
+    const int n_walls = this->walls.size();
+    // ------------------------------------
+
+    // SEARCH FOR THE WALL WITH MATCHING ID
+    int w = 0;
+    bool found = false;
+
+    while (!found && w < n_walls)
+    {
+        if (this->walls[w].id == wall_id)
+        {
+            found = true;
+        }
+        else
+        {
+            w += 1;
+        }
+    }
+    // ------------------------------------
+
+    // SEND A WARNING IN CASE THE WALL COULD NOT BE FOUND -------------
+    if ((!found) && (verbosity > 0))
+    {
+        io::warning("mesh.cpp - Mesh::get_wall_index",
+                    "Could not find the wall with id: "+std::to_string(wall_id));
+    }
+    // ----------------------------------------------------------------
+
+    return w;
 }
 // ====================================================================
 
@@ -662,6 +673,10 @@ void Mesh::init_tolerance(const double rel_tol)
     // ----------------------------------------------------------------
 
     this->tol = shortest_edge*rel_tol;
+    
+this->tol = std::max(this->tol, 1.0e-12);
+
+    std::cout << "Setting tol: " << this->tol << std::endl;
 }
 // ====================================================================
 
@@ -939,35 +954,26 @@ void Mesh::init_voronoi_faces()
 }
 // ====================================================================
 
-// BUILD MESH: BASE ===================================================
-void Mesh::build(const int dim, const double mesh_size)
+// INITIALIZATION: VORONOI VERTICES AND EDGES =========================
+void Mesh::init_voronoi_vertices_and_edges()
 {
-    this->build_bottom_up(dim, mesh_size);
-}
-// ====================================================================
+    // CLEAR PREVIOUS DATA
+    this->vertices.clear();
+    this->edges.clear();
+    // --------------------
 
-// BUILD MESH: BOTTOM-UP ==============================================
-void Mesh::build_bottom_up(const int dim, const double mesh_size)
-{
-    // PARAMETERS -----------------------------------------------------
+    // PARAMETERS -------------------------
     const int n_cells = this->cells.size();
     const int n_faces = this->faces.size();
-    // ----------------------------------------------------------------
+    // ------------------------------------
 
     // VARIABLES ------------------------------------------------------
     const double * S, * A, * B;
     voro::voronoicell_neighbor * vc;
     std::vector<double> ver;
     bool foundA, foundB, found;
-    int vA, vB, ed, n_vertices, n_edges;
-
-    int nodes_pos, aux_offset;
+    int vA, vB, n_vertices, n_edges;
     // ----------------------------------------------------------------
-
-    // CLEAR PREVIOUS DATA
-    this->vertices.clear();
-    this->edges.clear();
-    // --------------------
 
     // CONSTRUCT THE UNIQUE LIST OF VERTICES AND EDGES ----------------
     for (int c = 0; c < n_cells; ++c)
@@ -1055,7 +1061,7 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
                     // CHECK WHETHER WE HAVE ALREADY ADDED THE EDGE AB
                     n_edges = this->edges.size();
                     found = false;
-                    ed = 0;
+                    int ed = 0;
                     while ((!found) && (ed < n_edges))
                     {
                         const VoronoiEdge & edge = this->edges[ed];
@@ -1091,9 +1097,6 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
             }
         }
     }
-
-    // NUMBER OF VERTICES AND EDGES
-    n_vertices = this->vertices.size();
     n_edges = this->edges.size();
     // ----------------------------------------------------------------
 
@@ -1116,15 +1119,22 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
                 if ((cell.nbr[cf] > c) || (cell.nbr[cf] < 0))
                 {
                     VoronoiFace & face = this->faces[cell.f_conn[cf]];
+                    face.v_conn.clear();
 
                     // SET THE VERTEX CONNECTIVITY
-                    const int n_face_vertices = face_vertices[face_vertices_pos];
-                    face.v_conn.resize(n_face_vertices);
+                    std::vector<int>::iterator it;
+                    int n_face_vertices = face_vertices[face_vertices_pos];
                     for (int v = 0; v < n_face_vertices; ++v)
                     {
                         const int vv = face_vertices[face_vertices_pos+1+v];
-                        face.v_conn[v] = cell.v_conn[vv];
+                        it = std::find(face.v_conn.begin(), face.v_conn.end(), cell.v_conn[vv]);
+                        if (it == face.v_conn.end())
+                        {
+                            face.v_conn.push_back(cell.v_conn[vv]);
+                        }
                     }
+
+                    n_face_vertices = face.v_conn.size();
                     
                     // SET THE EDGE CONNECTIVITY
                     for (int v = 0; v < n_face_vertices; ++v)
@@ -1133,7 +1143,7 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
                         vB = (v < (n_face_vertices-1))? face.v_conn[v+1] : face.v_conn[0];
 
                         found = false;
-                        ed = 0;
+                        int ed = 0;
                         while ((!found) && (ed < n_edges))
                         {
                             const VoronoiEdge & edge = this->edges[ed];
@@ -1158,8 +1168,8 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
 
                         if (!found)
                         {
-                            io::error("mesh.cpp - Mesh::export_vtk",
-                                      "Could not find a face' edge.");
+                            io::error("mesh.cpp - Mesh::init_voronoi_vertices_and_edges",
+                                      "Could not find a face's edge.");
                         }
                     }
                 }
@@ -1171,9 +1181,171 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
     }
     // ----------------------------------------------------------------
 
-    // CLEAR MESH MEMORY
+    // UPDATE THE PARENT ENTITIES INFO FOR THE VERTICES ---------------
+    for (int ed = 0; ed < n_edges; ++ed)
+    {
+        const VoronoiEdge & edge = this->edges[ed];
+        const int n_edge_vertices = 2;
+
+        for (int ev = 0; ev < n_edge_vertices; ++ev)
+        {
+            const int v = edge.v_conn[ev];
+            VoronoiVertex & vertex = this->vertices[v];
+
+            vertex.parent_edges.push_back(ed);
+        }
+    }
+    
+    for (int f = 0; f < n_faces; ++f)
+    {
+        const VoronoiFace & face = this->faces[f];
+        const int n_face_vertices = face.v_conn.size();
+
+        for (int fv = 0; fv < n_face_vertices; ++fv)
+        {
+            const int v = face.v_conn[fv];
+            VoronoiVertex & vertex = this->vertices[v];
+
+            vertex.parent_faces.push_back(f);
+        }
+    }
+
+    for (int c = 0; c < n_cells; ++c)
+    {
+        const VoronoiCell & cell = this->cells[c];
+        const int n_cell_vertices = cell.v_conn.size();
+
+        for (int cv = 0; cv < n_cell_vertices; ++cv)
+        {
+            const int v = cell.v_conn[cv];
+            VoronoiVertex & vertex = this->vertices[v];
+
+            vertex.parent_cells.push_back(c);
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // UPDATE THE PARENT ENTITIES INFO FOR THE EDGES ------------------
+    for (int f = 0; f < n_faces; ++f)
+    {
+        const VoronoiFace & face = this->faces[f];
+        const int n_face_edges = face.ed_conn.size();
+
+        for (int fe = 0; fe < n_face_edges; ++fe)
+        {
+            const int ed = face.ed_conn[fe];
+            VoronoiEdge & edge = this->edges[ed];
+
+            edge.parent_faces.push_back(f);
+        }
+    }
+
+    for (int c = 0; c < n_cells; ++c)
+    {
+        const VoronoiCell & cell = this->cells[c];
+        const int n_cell_edges = cell.ed_conn.size();
+
+        for (int ce = 0; ce < n_cell_edges; ++ce)
+        {
+            const int ed = cell.ed_conn[ce];
+            VoronoiEdge & edge = this->edges[ed];
+
+            edge.parent_cells.push_back(c);
+        }
+    }
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+
+// INITIALIZATION: WALLS ==============================================
+void Mesh::init_voronoi_walls()
+{
+    // CLEAR PREVIOUS DATA
+    this->walls.clear();
+    // --------------------
+
+    // PARAMETERS -------------------------
+    const int n_faces = this->faces.size();
+    // ------------------------------------
+
+    // ADD THE WALLS --------------------------------------------------
+    for (int f = 0; f < n_faces; ++f)
+    {
+        const VoronoiFace & face = this->faces[f];
+        
+        if (face.bou_type == BOU_TYPE_WALL)
+        {
+            const int wall_id = -face.parent_cells[1];
+
+            if (wall_id < 0)
+            {
+                io::error("mesh.cpp - Mesh::init_voronoi_walls",
+                          "A wall face must have a negative wall id associated to it.");
+            }
+
+            // CHECK WHETHER WE HAVE ADDED A WALL WITH THIS ID
+            const size_t w = this->get_wall_index(wall_id, 0);
+
+            if (w == this->walls.size())
+            {
+                // CREATE A WALL
+                VoronoiWall wall;
+
+                // Set the id
+                wall.id = wall_id;
+
+                // Add the face
+                wall.f_conn.clear();
+                wall.f_conn.push_back(f);
+                
+                // Add the cell
+                wall.c_conn.clear();
+                wall.c_conn.push_back(face.parent_cells[0]);
+
+                // Push the wall
+                this->walls.push_back(wall);
+            }
+            else
+            {
+                // GET THE WALL
+                VoronoiWall & wall = this->walls[w];
+
+                // Add the face
+                wall.f_conn.push_back(f);
+                
+                // Add the cell
+                wall.c_conn.push_back(face.parent_cells[0]);
+            }
+        }
+    }
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+
+// BUILD MESH: BASE ===================================================
+void Mesh::build(const int dim, const double mesh_size)
+{
+    this->build_bottom_up(dim, mesh_size);
+}
+// ====================================================================
+
+// BUILD MESH: BOTTOM-UP ==============================================
+void Mesh::build_bottom_up(const int dim, const double mesh_size)
+{
+    // CLEAR PREVIOUS DATA
     this->clear_mesh();
-    // ----------------
+    // -------------------
+
+    // PARAMETERS -----------------------------------------------------
+    const int n_cells = this->cells.size();
+    const int n_faces = this->faces.size();
+    const int n_edges = this->edges.size();
+    const int n_vertices = this->vertices.size();
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    int nodes_pos, aux_offset;
+    // ----------------------------------------------------------------
 
     // ADD THE VERTICES' NODES AND ELEMENTS ---------------------------
     // MAKE ROOM
@@ -1337,14 +1509,6 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
             this->parents.push_back(f);
         }
 
-        /* DEBUG
-        std::cout << "face_conn:" << std::endl;
-        for (int n = 0; n < n_face_elems; ++n)
-        {
-            math::matrix::print_inline_int(3, &face_conn[3*n]); std::cout << std::endl;
-        }
-        */
-
         // Modify the connectivity of the face
         for (int c = 0; c < face_conn_size; ++c)
         {
@@ -1359,25 +1523,6 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
         }
 
         nodes_pos += n_new_nodes;
-
-        /* DEBUG
-        std::cout << "face_nodes:" << std::endl;
-        for (int n = 0; n < n_face_nodes; ++n)
-        {
-            math::matrix::print_inline(3, &face_nodes[3*n]); std::cout << std::endl;
-        }
-        std::cout << "face_conn:" << std::endl;
-        for (int n = 0; n < n_face_triangles; ++n)
-        {
-            math::matrix::print_inline_int(3, &face_conn[3*n]); std::cout << std::endl;
-        }
-        std::cout << "bou_nodes:" << std::endl;
-        for (int n = 0; n < n_boundary_nodes; ++n)
-        {
-            std::cout << bou_nodes[n] << std::endl;
-        }
-        std::cout << std::endl;
-        */
 
         // Connectivity
         for (int e = 0; e < n_face_elems; ++e)
@@ -1397,7 +1542,6 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
 
     if (dim < 3) return;
     // ----------------------------------------------------------------
-
 
     // ADD THE POLYHEDRA' NODES AND ELEMENTS --------------------------
     for (int c = 0; c < n_cells; ++c)
@@ -1446,15 +1590,15 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
         }
 
         // Modify the connectivity of the cell
-        for (int c = 0; c < cell_conn_size; ++c)
+        for (int k = 0; k < cell_conn_size; ++k)
         {
-            if (cell_conn[c] < n_boundary_nodes)
+            if (cell_conn[k] < n_boundary_nodes)
             {
-                cell_conn[c] = bou_nodes[cell_conn[c]];
+                cell_conn[k] = bou_nodes[cell_conn[k]];
             }
             else
             {
-                cell_conn[c] = cell_conn[c]-n_boundary_nodes+nodes_pos;
+                cell_conn[k] = cell_conn[k]-n_boundary_nodes+nodes_pos;
             }
         }
 
@@ -1480,13 +1624,6 @@ void Mesh::build_bottom_up(const int dim, const double mesh_size)
 }
 // ====================================================================
 
-// BUILD MESH: CELL-BASED =============================================
-void Mesh::build_cell_based(const int dim, const double mesh_size)
-{
-
-}
-// ====================================================================
-
 // CUT CELL ===========================================================
 void Mesh::cut_cell_by_vector(const int id, const double * V)
 {
@@ -1507,8 +1644,9 @@ void Mesh::cut_cell_by_plane(const int id, const double * plane)
     const double ud = plane[3]*tmp;
     const double dist = -(ud+un[0]*S[0]+un[1]*S[1]+un[2]*S[2]);
 
-    // ID FOR THE NEXT CELL (IF ANY)
+    // ID FOR THE NEXT CELL (OR NEXT WALL)
     const int new_id = this->get_new_id();
+    const int new_wall_id = this->get_new_wall_id();
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -1524,16 +1662,14 @@ void Mesh::cut_cell_by_plane(const int id, const double * plane)
 
     // CUT THE CELLS --------------------------------------------------
     cut_vc_exists = cut_vc->nplane(un[0], un[1], un[2], 2.0*dist, new_id);
-    if (cut_vc_exists)
-    {
-        other_cut_vc_exists = new_vc->nplane(-un[0], -un[1], -un[2], -2.0*dist, id);
-    }
+    other_cut_vc_exists = new_vc->nplane(-un[0], -un[1], -un[2], -2.0*dist, id);
     // ----------------------------------------------------------------
 
-    // THE CELL HAS BEEN CUT OR LEFT UNMODIFIED -----------------------
-    if (cut_vc_exists)
+    // SPLIT THE FACES OF THE NEIGHBORS AND UPDATE THEIR INFO ---------
+    // THE CELL HAS BEEN CUT
+    if (cut_vc_exists && other_cut_vc_exists)
     {
-        // LOCATE ALL NEIGHBORS THAT TOUCH THE CUTTING PLANE
+        // Locate all neighbors touching the plane
         int ii, jj;
         if (voro_utils::find_face(*cut_vc, ii, jj, new_id))
         {
@@ -1543,9 +1679,8 @@ void Mesh::cut_cell_by_plane(const int id, const double * plane)
         std::vector<int> cut_nbr;
         voro_utils::face_neighbors(*cut_vc, ii, jj, new_id, cut_nbr);
         const int n_cut_nbr = cut_nbr.size();
-        
-        // LOOP OVER ALL THE TOUCHING NEIGHBORS AND SPLIT THE FACE THAT
-        // TOUCHES THE CUTTING PLANE
+
+        // Loop over the neighbors and split the affected faces
         for (int cn = 0; cn < n_cut_nbr; ++cn)
         {
             // Skip the walls
@@ -1570,113 +1705,194 @@ void Mesh::cut_cell_by_plane(const int id, const double * plane)
             }
         }
 
-        // UPDATE THE OTHER VORO++ CELL
-        if (other_cut_vc_exists)
+        // Get the current neighbors
+        std::vector<int> nbr;
+        new_vc->neighbors(nbr);
+
+        // Loop over the neighbors of the other voro++ cell and
+        // update the neighboring information of the faces
+        const int n_nbr = nbr.size();
+        for (int n = 0; n < n_nbr; ++n)
         {
-            // Get the current neighbors
-            std::vector<int> nbr;
-            new_vc->neighbors(nbr);
+            const int nbr_id = nbr[n];
 
-            // Loop over the neighbors of the other voro++ cell and
-            // update the neighboring information of the faces
-            const int n_nbr = nbr.size();
-            for (int n = 0; n < n_nbr; ++n)
+            // Skip the walls or the original cell
+            if ((nbr_id < 0) || (nbr_id == id))
             {
-                const int nbr_id = nbr[n];
-
-                // Skip the walls or the original cell
-                if ((nbr_id < 0) || (nbr_id == id))
-                {
-                    continue;
-                }
-
-                // Skip those cells whose faces have been cut
-                bool found = false;
-                for (int cn = 0; cn < n_cut_nbr; ++cn)
-                {
-                    if (nbr_id == cut_nbr[cn])
-                    {
-                        found = true;
-                    }
-                }
-                if (found)
-                {
-                    continue;
-                }
-
-                // Update remaining
-                const int nbr_c = this->get_cell_index(nbr_id);
-                voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[nbr_c];
-
-                for (int v = 0; v < nbr_vc->p; ++v)
-                {
-                    for (int f = 0; f < nbr_vc->nu[v]; ++f)
-                    {
-                        if (nbr_vc->ne[v][f] == id)
-                        {
-                            nbr_vc->ne[v][f] = new_id;
-                        }
-                    }  
-                }
-                nbr_vc->check_relations();
+                continue;
             }
+
+            // Skip those cells whose faces have been cut
+            bool found = false;
+            for (int cn = 0; cn < n_cut_nbr; ++cn)
+            {
+                if (nbr_id == cut_nbr[cn])
+                {
+                    found = true;
+                }
+            }
+            if (found)
+            {
+                continue;
+            }
+
+            // Update remaining
+            const int nbr_c = this->get_cell_index(nbr_id);
+            voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[nbr_c];
+
+            for (int v = 0; v < nbr_vc->p; ++v)
+            {
+                for (int f = 0; f < nbr_vc->nu[v]; ++f)
+                {
+                    if (nbr_vc->ne[v][f] == id)
+                    {
+                        nbr_vc->ne[v][f] = new_id;
+                    }
+                }  
+            }
+            nbr_vc->check_relations();
         }
     }
-    // THE CELL HAS BEEN DELETED --------------------------------------
+    // THE CELL HAS BEEN LEFT UNALTERED
+    else if (cut_vc_exists && !other_cut_vc_exists)
+    {
+        // Delete the new cell
+        delete new_vc;
+        new_vc = nullptr;
+    }
+    // THE CELL HAS BEEN DELETED
     else
     {
-io::error("mesh.cpp - cut_cell_by_plane", "THE CELL HAS BEEN DELETED");
+        // Delete the cell
+        delete cut_vc;
+        cut_vc = nullptr;
+
+        // Get the current neighbors
+        std::vector<int> nbr;
+        new_vc->neighbors(nbr);
+
+        // Update the information of the faces of the neighbors of the
+        // deleted voro++ cell
+        const int n_nbr = nbr.size();
+        for (int n = 0; n < n_nbr; ++n)
+        {
+            const int nbr_id = nbr[n];
+
+            // Skip the walls
+            if (nbr_id < 0)
+            {
+                continue;
+            }
+
+            // Update remaining
+            const int nbr_c = this->get_cell_index(nbr_id);
+            voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[nbr_c];
+
+            for (int v = 0; v < nbr_vc->p; ++v)
+            {
+                for (int f = 0; f < nbr_vc->nu[v]; ++f)
+                {
+                    if (nbr_vc->ne[v][f] == id)
+                    {
+                        nbr_vc->ne[v][f] = -new_wall_id;
+                    }
+                }  
+            }
+            nbr_vc->check_relations();
+        }
     }
     // ----------------------------------------------------------------
 
     // UPDATE THE vc_ptr VECTOR ---------------------------------------
-    if (cut_vc_exists)
+    // THE CELL HAS BEEN CUT
+    if (cut_vc_exists && other_cut_vc_exists)
     {
-        if (other_cut_vc_exists)
-        {
-            this->vc_ptrs.push_back(new_vc);
-        }
+        this->vc_ptrs.push_back(new_vc);
     }
+    // THE CELL HAS BEEN LEFT UNALTERED
+    else if (cut_vc_exists && !other_cut_vc_exists)
+    {
+        // Nothing to be done
+    }
+    // THE CELL HAS BEEN DELETED
     else
     {
-
-io::error("mesh.cpp - cut_cell_by_plane", "THE CELL HAS BEEN DELETED");
+        this->vc_ptrs[c] = nullptr;
     }
     // ----------------------------------------------------------------
 
     // UPDATE THE seeds VECTOR ----------------------------------------
-    if (cut_vc_exists)
+    // THE CELL HAS BEEN CUT
+    if (cut_vc_exists && other_cut_vc_exists)
     {
-        if (other_cut_vc_exists)
-        {
-            this->seeds.push_back(S[0]);
-            this->seeds.push_back(S[1]);
-            this->seeds.push_back(S[2]);
-        }
+        this->seeds.push_back(S[0]);
+        this->seeds.push_back(S[1]);
+        this->seeds.push_back(S[2]);
+    }
+    // THE CELL HAS BEEN LEFT UNALTERED
+    else if (cut_vc_exists && !other_cut_vc_exists)
+    {
+        // Nothing to be done
+    }
+    // THE CELL HAS BEEN DELETED
+    else
+    {
+        this->seeds[3*c+0] = 0.0;
+        this->seeds[3*c+1] = 0.0;
+        this->seeds[3*c+2] = 0.0;
     }
     // ----------------------------------------------------------------
 
     // UPDATE TOLERANCE -----------------------------------------------
-    if (cut_vc_exists)
+    // THE CELL HAS BEEN CUT
+    if (cut_vc_exists && other_cut_vc_exists)
     {
         this->init_tolerance();
+    }
+    // THE CELL HAS BEEN LEFT UNALTERED
+    else if (cut_vc_exists && !other_cut_vc_exists)
+    {
+        // Nothing to be done
+    }
+    // THE CELL HAS BEEN DELETED
+    else
+    {
+        // Nothing to be done
     }
     // ----------------------------------------------------------------
 
     // RECOMPUTE THE VORONOI CELLS AND FACES --------------------------
-    if (cut_vc_exists)
+    // THE CELL HAS BEEN CUT
+    if (cut_vc_exists && other_cut_vc_exists)
     {
-        if (other_cut_vc_exists)
+        std::vector<int> ids(n_cells+1);
+        for (int i = 0; i < n_cells; ++i)
         {
-            std::vector<int> ids(n_cells+1);
-            for (int c = 0; c < n_cells; ++c)
-            {
-                ids[c] = this->cells[c].id;
-            }
-            ids[n_cells] = new_id;
-            this->init_voronoi_cells(ids);
-            this->init_voronoi_faces();
+            ids[i] = this->cells[i].id;
         }
+        ids[n_cells] = new_id;
+        this->init_voronoi_cells(ids);
+        this->init_voronoi_faces();
+        this->init_voronoi_vertices_and_edges();
+        this->init_voronoi_walls();
+    }
+    // THE CELL HAS BEEN LEFT UNALTERED
+    else if (cut_vc_exists && !other_cut_vc_exists)
+    {
+        // Nothing to be done   
+    }
+    // THE CELL HAS BEEN DELETED
+    else
+    {
+        std::vector<int> ids(n_cells);
+        for (int i = 0; i < n_cells; ++i)
+        {
+            ids[i] = this->cells[i].id;
+        }
+        this->init_voronoi_cells(ids);
+        this->init_voronoi_faces();
+        this->init_voronoi_vertices_and_edges();
+        this->init_voronoi_walls();
     }
     // ----------------------------------------------------------------
 }
@@ -1693,8 +1909,9 @@ void Mesh::export_vtk(const std::string & filepath)
     std::vector<std::string> VTK_cell_fields_name = 
     {
         "DIM",
+        "BOU",
         "PARENT",
-        "GHOST"
+        "GHOST",
     };
     const int n_cell_fields = VTK_cell_fields_name.size();
     // ----------------------------------------------------------------
@@ -1829,11 +2046,35 @@ void Mesh::export_vtk(const std::string & filepath)
                       "Unexpected element type: "+std::to_string(this->etype[e]));
         }
 
+        // BOU
+        if (this->etype[e] == VTK_VERTEX)
+        {
+            VTK_cell_fields[1][e] = -1;
+        }
+        else if (this->etype[e] == VTK_LINE)
+        {
+            VTK_cell_fields[1][e] = -1;
+        }
+        else if (this->etype[e] == VTK_TRIANGLE)
+        {
+            const VoronoiFace & face = this->faces[this->parents[e]];
+            VTK_cell_fields[1][e] = face.bou_type;
+        }
+        else if (this->etype[e] == VTK_TETRA)
+        {
+            VTK_cell_fields[1][e] = -1;
+        }
+        else
+        {
+            io::error("mesh.cpp - Mesh::export_vtk",
+                      "Unexpected element type: "+std::to_string(this->etype[e]));
+        }
+
         // PARENT
-        VTK_cell_fields[1][e] = this->parents[e];
+        VTK_cell_fields[2][e] = this->parents[e];
 
         // GHOST
-        VTK_cell_fields[2][e] = this->ghost[e];
+        VTK_cell_fields[3][e] = this->ghost[e];
     }
     // ----------------------------------------------------------------
 

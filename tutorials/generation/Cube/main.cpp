@@ -39,7 +39,7 @@ int main()
     const bool p3 = false;
 
     // Number of particles
-    const int n_particles = 734;
+    const int n_particles = 1000;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -54,51 +54,48 @@ int main()
     // ----------------------------------------------------------------
 
     // PLACE THE PARTICLES --------------------------------------------
-    for (int i = 0; i < n_particles; ++i)
+    for (int id = 0; id < n_particles; ++id)
     {
         X1 = X1L+rnd()*(X1U-X1L);
         X2 = X2L+rnd()*(X2U-X2L);
         X3 = X3L+rnd()*(X3U-X3L);
-        con.put(i, X1, X2, X3);
+        con.put(id, X1, X2, X3);
     }
     // ----------------------------------------------------------------
 
     // INITIALIZE THE MESH WITH THE TESSELLATION INFORMATION
     msh.init(con);
 
-    // BUILD THE MESH
-    msh.build(3, 0.1);
-
     // EXPORT TO VTK FORMAT
-    msh.export_vtk("mesh.vtu");
+    msh.export_tessellation_vtk("tess.vtu");
     // -----------------------------------------------------
 
-    // PERFORM FIRST CUT --------------------------
+    // REPORT ---------------------------------------------------------
+    
+    // ----------------------------------------------------------------
+
+    // FILL IN THE OUTPUT DATA STRUCTURES -----------------------------
+    std::vector<int> cid(n_particles);
+    std::vector<std::array<double, 4>> cc(n_particles);
+    std::vector<std::vector<double>> cn(n_particles);
+    
+    for (int i = 0; i < n_particles; ++i)
     {
-        const int id = 325;
-        const double un[3] = {rnd(), rnd(), rnd()};
-        msh.cut_cell_by_vector(id, un);
+        cid[i] = msh.cells[i].id;
+
+        cc[i][0] = msh.cells[i].centroid[0];
+        cc[i][1] = msh.cells[i].centroid[1];
+        cc[i][2] = msh.cells[i].centroid[2];
+        cc[i][3] = msh.cells[i].volume;
+
+        const int n_nbr = msh.cells[i].nbr.size();
+        cn[i].push_back(n_nbr);
+
+        for (int n = 0; n < n_nbr; ++n)
+        {
+            const int nbr_c = msh.cells[i].nbr[n];
+        }
     }
-
-    // BUILD THE MESH
-    msh.build(3, 0.1);
-
-    // EXPORT TO VTK FORMAT
-    msh.export_vtk("mesh-2.vtu");
-    // --------------------------------------------
-
-    // PERFORM SECOND CUT ON THE NEWLY ADDED CELL -
-    {
-        const int id = n_particles;
-        const double un[3] = {rnd(), rnd(), rnd()};
-        msh.cut_cell_by_vector(id, un);
-    }
-
-    // BUILD THE MESH
-    msh.build(3, 0.1);
-
-    // EXPORT TO VTK FORMAT
-    msh.export_vtk("mesh-3.vtu");
-    // --------------------------------------------
+    // ----------------------------------------------------------------
 }
 // ====================================================================

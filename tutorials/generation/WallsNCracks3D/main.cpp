@@ -96,7 +96,10 @@ int main()
     const bool p3 = false;
 
     // Number of particles
-    const int n_particles = 1000;
+    const int n_particles = 5000;
+
+    // Number of fractures
+    const int n_fractures = 26;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -123,28 +126,32 @@ int main()
     // INITIALIZE THE MESH WITH THE TESSELLATION INFORMATION
     msh.init(con);
 
-    // BUILD THE MESH
-    msh.build(3, 1.0);
-
     // EXPORT TO VTK FORMAT
-    msh.export_vtk("mesh.vtu");
+    msh.export_tessellation_vtk("tess.vtu");
     // -----------------------------------------------------
 
     // ADD CRACKS -----------------------------------------------------
+    for (int f = 0; f < n_fractures; ++f)
     {
-        const double un[3] = {0.0, 1.0, 0.0};
-        const double d = 0.0;
-        const double C[3] = {0.0, 0.0, 0.0};
+        const double u = rnd();
+        const double v = rnd();
+        const double alpha1 = 2.0*M_PI*u;
+        const double alpha2 = std::acos(2.0*v-1.0);
+        const double un[3] = {std::cos(alpha1)*std::sin(alpha2),
+                              std::sin(alpha1)*std::sin(alpha2),
+                              std::cos(alpha2)};
+        const double C[3] = {X1L+rnd()*(X1U-X1L), X2L+rnd()*(X2U-X2L), X3L+rnd()*(X3U-X3L)};
+        const double d = -(C[0]*un[0]+C[1]*un[1]+C[2]*un[2]);
         const double R[3] = {0.5, 0.5, 0.5};
-        const plane_elliptic_crack crk(un, d, C, R, -1001);
-        msh.add_crack(crk);
-
-        // BUILD THE MESH
-        msh.build(3, 0.1);
-
-        // EXPORT TO VTK FORMAT
-        msh.export_vtk("mesh-2.vtu");
+        const plane_elliptic_crack crk(un, d, C, R, -(10000+f));
+        
+        if (f != 23)
+        {
+            msh.add_crack(crk);
+        }
     }
+
+    msh.export_tessellation_vtk("tess-2.vtu");
     // ----------------------------------------------------------------
 }
 // ====================================================================

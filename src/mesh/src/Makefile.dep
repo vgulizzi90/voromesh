@@ -1,0 +1,9 @@
+utils_io.o: utils_io.cpp utils_io.hpp
+utils_vtk.o: utils_vtk.cpp utils_vtk.hpp utils_io.hpp
+utils_math.o: utils_math.cpp utils_math.hpp ../triangle/tricall.h \
+ ../triangle/triangle.h ../triangle/triangle.h
+utils_mesh.o: utils_mesh.cpp utils_io.hpp utils_math.hpp utils_mesh.hpp \
+ ../tetgen/tetgen.h
+utils_voropp.o: utils_voropp.cpp utils_voropp.hpp
+mesh.o: mesh.cpp mesh.hpp utils_io.hpp utils_math.hpp utils_voropp.hpp \
+ utils_vtk.hpp utils_mesh.hpp

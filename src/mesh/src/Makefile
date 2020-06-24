@@ -23,6 +23,11 @@ all:
 	$(MAKE) -C $(VORO_DIR)/src/ libvoro++.a
 	$(MAKE) libvoromesh++.a
 
+depend:
+	$(CXX) -MM $(cpp_src) >Makefile.dep
+
+include Makefile.dep
+
 $(TRIANGLE_DIR)/%.o: $(TRIANGLE_DIR)/%.c
 	$(CC) $(CC_FLAGS) $(CC_DEFS) $(TRIANGLE_DEFS) -c $< -o $@
 
@@ -40,4 +45,4 @@ clean:
 	rm -f $(obj) libvoromesh++.a
 	$(MAKE) -C $(VORO_DIR)/src/ clean
 
-.PHONY: all clean
+.PHONY: all clean depend

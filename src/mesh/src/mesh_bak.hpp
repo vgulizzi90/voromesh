@@ -12,8 +12,6 @@
 #include "utils_math.hpp"
 #include "utils_voropp.hpp"
 
-#define ID_UNDEFINED -1
-
 #define BOU_TYPE_UNDEFINED -1
 #define BOU_TYPE_WALL 0
 #define BOU_TYPE_INTERFACE 1
@@ -25,13 +23,69 @@
 
 namespace voromesh
 {
+// VORONOI VERTEX CLASS ###############################################
+struct VoronoiVertex
+{
+    // DATA MEMBERS ===================================================
+    int state;
+
+    double x[3];
+    std::vector<int> parent_edges;
+    std::vector<int> parent_faces;
+    std::vector<int> parent_cells;
+
+    int m_conn;
+    // ================================================================
+
+    // CONSTRUCTOR ====================================================
+    VoronoiVertex();
+    // ================================================================
+};
+// ####################################################################
+
+
+
+// VORONOI EDGE CLASS #################################################
+struct VoronoiEdge
+{
+    // DATA MEMBERS ===================================================
+    int state;
+
+    int v_conn[2];
+    std::vector<int> parent_faces;
+    std::vector<int> parent_cells;
+
+    std::vector<int> m_conn;
+    // ================================================================
+
+    // CONSTRUCTOR ====================================================
+    VoronoiEdge();
+    // ================================================================
+
+    // BUILD MESH =====================================================
+    void build_mesh(const double mesh_size,
+                    const std::vector<VoronoiVertex> & vertices,
+                    std::vector<double> & nodes, std::vector<int> & conn) const;
+    // ================================================================
+};
+// ####################################################################
+
+
+
 // VORONOI FACE CLASS #################################################
 struct VoronoiFace
 {
     // DATA MEMBERS ===================================================
+    int state;
+
     int bou_type;
+    double R[9];
+
+    std::vector<int> v_conn;
+    std::vector<int> ed_conn, ed_ori;
     int parent_cells[2];
-    double centroid[3], area;
+
+    std::vector<int> m_conn;
     // ================================================================
 
     // CONSTRUCTOR ====================================================
@@ -39,9 +93,18 @@ struct VoronoiFace
     // ================================================================
 
     // EVAL LOCAL REFERENCE SYSTEM ====================================
+    void eval_RS(const double * vertices, const int n_vertices, const int * conn);
     // ================================================================
 
     // BUILD MESH =====================================================
+    void build_mesh(const double mesh_size,
+                    const std::vector<VoronoiVertex> & vertices,
+                    const std::vector<VoronoiEdge> & edges,
+                    const std::vector<double> & global_mesh_nodes,
+                    const std::vector<int> & global_mesh_offset,
+                    const std::vector<int> & global_mesh_conn,
+                    std::vector<double> & nodes, std::vector<int> & conn,
+                    std::vector<int> & bou_nodes) const;
     // ================================================================
 };
 // ####################################################################
@@ -52,11 +115,17 @@ struct VoronoiFace
 struct VoronoiCell
 {
     // DATA MEMBERS ===================================================
+    int state;
+
     int id;
     std::vector<int> nbr;
-    double centroid[3], volume;
+    double centroid[3];
 
-    std::vector<int> f_conn;
+    std::vector<int> f_conn, f_ori;
+    std::vector<int> ed_conn, ed_ori;
+    std::vector<int> v_conn;
+
+    std::vector<int> m_conn;
     // ================================================================
 
     // CONSTRUCTOR ====================================================
@@ -64,6 +133,15 @@ struct VoronoiCell
     // ================================================================
 
     // BUILD MESH =====================================================
+    void build_mesh(const double mesh_size,
+                    const std::vector<VoronoiVertex> & vertices,
+                    const std::vector<VoronoiEdge> & edges,
+                    const std::vector<VoronoiFace> & faces,
+                    const std::vector<double> & global_mesh_nodes,
+                    const std::vector<int> & global_mesh_offset,
+                    const std::vector<int> & global_mesh_conn,
+                    std::vector<double> & nodes, std::vector<int> & conn,
+                    std::vector<int> & bou_nodes) const;
     // ================================================================
 };
 // ####################################################################
@@ -74,6 +152,8 @@ struct VoronoiCell
 struct VoronoiWall
 {
     // DATA MEMBERS ===================================================
+    int state;
+
     int id;
 
     std::vector<int> f_conn;
@@ -92,6 +172,8 @@ struct VoronoiWall
 struct VoronoiCrack
 {
     // DATA MEMBERS ===================================================
+    int state;
+
     int id;
 
     std::vector<int> f_conn;
@@ -101,29 +183,34 @@ struct VoronoiCrack
     // CONSTRUCTOR ====================================================
     VoronoiCrack();
     // ================================================================
-
-    // AUXILIARY METHODS ==============================================
-    bool contains_cell(const int c) const;
-    // ================================================================
 };
 // ####################################################################
 
 
-    
+
 // MESH CLASS #########################################################
 struct Mesh
 {
     // DATA MEMBERS ===================================================
-    std::vector<double> seeds;
-    std::vector<int> ids;
+    int state;
+    std::vector<voro::voronoicell_neighbor *> vc_ptrs;
 
+    std::vector<double> seeds;
+
+    double tol;
     std::vector<VoronoiCell> cells;
     std::vector<VoronoiFace> faces;
+    std::vector<VoronoiEdge> edges;
+    std::vector<VoronoiVertex> vertices;
     std::vector<VoronoiWall> walls;
     std::vector<VoronoiCrack> cracks;
 
-    // VORO++
-    std::vector<voro::voronoicell_neighbor *> vc_ptrs;
+    std::vector<double> nodes;
+    std::vector<int> etype;
+    std::vector<int> ghost;
+    std::vector<int> offset;
+    std::vector<int> conn;
+    std::vector<int> parents;
     // ================================================================
 
     // CONSTRUCTOR ====================================================
@@ -135,7 +222,8 @@ struct Mesh
     // ================================================================
 
     // FREE MEMORY ====================================================
-    void clear_tessellation();
+    void clear_geometry();
+    void clear_mesh();
     void free();
     // ================================================================
 
@@ -152,14 +240,14 @@ struct Mesh
         // -----------
         
         // INIT MEMORY ----------
-        this->seeds.resize(3*np);
-        this->ids.resize(np);
         this->vc_ptrs.resize(np);
+        this->seeds.resize(3*np);
         // ----------------------
 
         // COMPUTE THE VORONOI CELLS ----------------------------------
         int k = 0;
         double * pp;
+        std::vector<int> ids(np, -1);
         voro::voronoicell_neighbor * vc;
         voro::c_loop_all cl(con);
 
@@ -169,26 +257,26 @@ struct Mesh
             
             if (con.compute_cell(*vc, cl))
             {
+                this->vc_ptrs[k] = vc;
+
                 pp = con.p[cl.ijk]+3*cl.q;
                 this->seeds[3*k+0] = pp[0];
                 this->seeds[3*k+1] = pp[1];
                 this->seeds[3*k+2] = pp[2];
 
-                // Check the id of the voronoi cell is not negative
+                // CHECK THE ID OF THE VORONOI CELL IS NOT NEGATIVE
                 if (cl.pid() < 0)
                 {
                     io::error("mesh.hpp - Mesh::init",
                               "Voronoi cells cannot have negative ids.");
                 }
-                this->ids[k] = cl.pid();
-
-                this->vc_ptrs[k] = vc;
+                ids[k] = cl.pid();
             }
             else
             {
                 delete vc;
-                this->ids[k] = ID_UNDEFINED;
                 this->vc_ptrs[k] = nullptr;
+                ids[k] = -1;
             }
 
             k += 1;
@@ -196,20 +284,215 @@ struct Mesh
         while (cl.inc());
         // ------------------------------------------------------------
 
-        // INIT THE VORONOI TESSELLATION DATA STRUCTURES
-        this->init_tessellation();
-        // ---------------------------------------------
+        // SET THE TOLERANCE --
+        this->init_tolerance();
+        // --------------------
+
+        // ADD THE VORONOI CELLS -----
+        this->init_voronoi_cells(ids);
+        // ---------------------------
+
+        // ADD THE VORONOI FACES --
+        this->init_voronoi_faces();
+        // ------------------------
+
+        // ADD THE VERTICES AND THE EDGES ------
+        this->init_voronoi_vertices_and_edges();
+        // -------------------------------------
+
+        // ADD THE VORONOI WALLS --
+        this->init_voronoi_walls();
+        // ------------------------
+    }
+    // ================================================================
+
+    // ADD VORO++ CELL ================================================
+    template<class VC>
+    void add_vc(const VC & vc, const int new_id)
+    {
+        // PARAMETERS -------------------------
+        const int n_cells = this->cells.size();
+        // ------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        int c;
+        voro::voronoicell_neighbor * new_vc;
+        bool new_vc_is_valid;
+        // ------------------------------------------------------------
+
+        // CHECK THE ID OF THE CELL -----------------------------------
+        if (new_id < 0)
+        {
+            io::error("mesh.hpp - Mesh::init",
+                      "Voronoi cells cannot have negative ids.");
+        }
+        c = this->get_cell_index(new_id, 0);
+        if (c != n_cells)
+        {
+            io::warning("mesh.hpp - Mesh::init",
+                        "A voronoi cell with id = "+std::to_string(new_id)+" already exists.");
+        }
+        // ------------------------------------------------------------
+
+        // CREATE A NEW VORO++ CELL -----------------------------------
+        new_vc = new voro::voronoicell_neighbor();
+        *new_vc = vc;
+        new_vc_is_valid = (new_vc != nullptr);
+        // ------------------------------------------------------------
+
+        // UPDATE THE vc_ptr VECTOR --------
+        if (new_vc_is_valid)
+        {
+            this->vc_ptrs.push_back(new_vc);
+        }
+        // ---------------------------------
+
+        // UPDATE THE seeds VECTOR ----
+        if (new_vc_is_valid)
+        {
+            this->seeds.push_back(0.0);
+            this->seeds.push_back(0.0);
+            this->seeds.push_back(0.0);
+        }
+        // ----------------------------
+
+        // UPDATE TOLERANCE -------
+        if (new_vc_is_valid)
+        {
+            this->init_tolerance();
+        }
+        // ------------------------
+
+        // RECOMPUTE THE VORONOI CELLS AND FACES ---
+        if (new_vc_is_valid)
+        {
+            std::vector<int> ids(n_cells+1);
+            for (int i = 0; i < n_cells; ++i)
+            {
+                ids[i] = this->cells[i].id;
+            }
+            ids[n_cells] = new_id;
+            this->init_voronoi_cells(ids);
+            this->init_voronoi_faces();
+            this->init_voronoi_vertices_and_edges();
+            this->init_voronoi_walls();
+        }
+        // -----------------------------------------
     }
     // ================================================================
 
     // AUXILIARY METHODS ==============================================
     int get_new_id() const;
-    int find_cell_index_by_id(const int id) const;
-    int find_wall_index_by_id(const int id) const;
+    int get_new_wall_id() const;
+    int get_cell_index(const int id, const int verbosity = 0) const;
+    int get_wall_index(const int wall_id, const int verbosity = 0) const;
     // ================================================================
 
-    // INITIALIZATION: TESSELLATION ===================================
-    void init_tessellation();
+    // INITIALIZATION: TOLERANCE ======================================
+    void init_tolerance(const double rel_tol = 1.0e-5);
+    // ================================================================
+
+    // INITIALIZATION: VORONOI CELLS ==================================
+    void init_voronoi_cells(const std::vector<int> & ids);
+    // ================================================================
+
+    // INITIALIZATION: VORONOI FACES ==================================
+    void init_voronoi_faces();
+    // ================================================================
+
+    // INITIALIZATION: VORONOI VERTICES AND EDGES =====================
+    void init_voronoi_vertices_and_edges();
+    // ================================================================
+
+    // INITIALIZATION: WALLS ==========================================
+    void init_voronoi_walls();
+    // ================================================================
+
+    // BUILD MESH: BASE ===============================================
+    void build(const int dim, const double mesh_size);
+    // ================================================================
+
+    // BUILD MESH: BOTTOM-UP ==========================================
+    void build_bottom_up(const int dim, const double mesh_size);
+    // ================================================================
+
+    // CUT CELL =======================================================
+    void cut_cell_by_vector(const int id, const double * V);
+    void cut_cell_by_plane(const int id, const double * plane);
+    // ================================================================
+
+    // CUT BASE METHODS ===============================================
+    template<class DISTANCE_FUNCTION>
+    void split_edges(const DISTANCE_FUNCTION & phi)
+    {
+        // PARAMETERS -------------------------------------------------
+        const int n_edges_0 = this->edges.size();
+        const int n_it = 100;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        // ------------------------------------------------------------
+
+        // LOOP OVER THE EDGES ----------------------------------------
+        for (int ed = 0; ed < n_edges_0; ++ed)
+        {
+            VoronoiEdge & edge = this->edges[ed];
+            const double * A = this->vertices[edge.v_conn[0]].x;
+            const double * B = this->vertices[edge.v_conn[1]].x;
+            const double phiA = phi.eval(A);
+            const double phiB = phi.eval(B);
+            
+            if ((std::abs(phiA) < this->tol) || (std::abs(phiA) < this->tol))
+            {
+                continue;
+            }
+            if (phiA*phiB > 0.0)
+            {
+                continue;
+            }
+
+            // FIND THE INTERSECTION BETWEEN THE EDGE AND THE ZERO
+            // LEVEL SET OF THE DISTANCE FUNCTION
+            double t;
+            double X[3];
+            double phiX, grad_phi[3], dphidt;
+            int it;
+
+            t = phiA/(phiA-phiB);
+            it = 0;
+            do
+            {
+                X[0] = A[0]+(B[0]-A[0])*t;
+                X[1] = A[1]+(B[1]-A[1])*t;
+                X[2] = A[2]+(B[2]-A[2])*t;
+
+                phiX = phi.eval(X);
+                phi.eval_grad(X, grad_phi);
+
+                dphidt = grad_phi[0]*(B[0]-A[0])+
+                         grad_phi[1]*(B[1]-A[1])+
+                         grad_phi[2]*(B[2]-A[2]);
+                
+                t -= phiX/dphidt;
+
+                it += 1;
+            }
+            while ((it < n_it) && (std::abs(phiX) > this->tol));
+
+            if (std::abs(phiX) > this->tol)
+            {
+                io::warning("mesh.hpp - split_edges",
+                            "Could not find the intersection between the distance function and the edge.");
+            }
+
+            // ADD A NEW VERTEX
+            VoronoiVertex new_vertex;
+        }
+        // ------------------------------------------------------------
+    }
+    
+    void split_faces();
+    void split_cells();
     // ================================================================
 
     // ADD WALL =======================================================
@@ -231,19 +514,14 @@ struct Mesh
         // ------------------------------------------------------------
         for (int c = 0; c < n_cells; ++c)
         {
-            const double * S = &this->seeds[3*c];
-            voro::voronoicell_neighbor * vc = this->vc_ptrs[c];
-
-            if (vc != nullptr)
+            if (this->vc_ptrs[c] != nullptr)
             {
-                std::vector<double> vertices;
-                vc->vertices(S[0], S[1], S[2], vertices);
-
-                const int n_vertices = vertices.size()/3;
+                const VoronoiCell & cell = this->cells[c];
+                const int n_vertices = cell.v_conn.size();
 
                 // LOCATION OF THE FIRST VERTEX WITH RESPECT TO THE
                 // WALL
-                const double V0_distance = wall.eval(vertices.data());
+                const double init_distance = wall.eval(this->vertices[cell.v_conn[0]].x);
 
                 // DETERMINE WHETHER THERE IS A CHANGE OF SIGN WHILE
                 // LOOPING OVER THE VERTICES
@@ -251,9 +529,9 @@ struct Mesh
                 int v = 1;
                 while (same_sign && (v < n_vertices))
                 {
-                    const double V_distance = wall.eval(&vertices[3*v]);
+                    const double vertex_distance = wall.eval(this->vertices[cell.v_conn[v]].x);
 
-                    if (V0_distance*V_distance < 0.0)
+                    if (init_distance*vertex_distance < 0.0)
                     {
                         same_sign = false;
                     }
@@ -264,12 +542,12 @@ struct Mesh
                 }
 
                 // CELL TO BE REMOVED
-                if (same_sign && (V0_distance > 0.0))
+                if (same_sign && (init_distance > 0.0))
                 {
                     cells_to_be_removed.push_back(c);
                 }
                 // CELL TO BE LEFT UNCHANGED
-                else if (same_sign && (V0_distance < 0.0))
+                else if (same_sign && (init_distance < 0.0))
                 {
                     // Do nothing
                 }
@@ -302,7 +580,7 @@ struct Mesh
                 }
 
                 // Update remaining
-                const int nbr_c = this->find_cell_index_by_id(nbr_id);
+                const int nbr_c = this->get_cell_index(nbr_id);
                 voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[nbr_c];
 
                 for (int v = 0; v < nbr_vc->p; ++v)
@@ -342,9 +620,17 @@ struct Mesh
         }
         // ------------------------------------------------------------
 
-        // RECOMPUTE THE TESSELLATION
-        this->init_tessellation();
-        // --------------------------
+        // UPDATE THE TESSELLATION ------------------------------------
+        std::vector<int> ids(n_cells);
+        for (int i = 0; i < n_cells; ++i)
+        {
+            ids[i] = this->cells[i].id;
+        }
+        this->init_voronoi_cells(ids);
+        this->init_voronoi_faces();
+        this->init_voronoi_vertices_and_edges();
+        this->init_voronoi_walls();
+        // ------------------------------------------------------------
     }
     // ================================================================
 
@@ -356,29 +642,22 @@ struct Mesh
         const int n_cells = this->cells.size();
         // ------------------------------------
 
-        // VARIABLES --------------------------------------------------
+        // VARIABLES -----------------------------------------
         std::vector<int> cells_to_be_split;
         std::vector<voro::voronoicell_neighbor *> new_vc_ptrs;
-
-        std::vector<std::array<int, 2>> new_cell_pairs_from_old_cracks;
-        // ------------------------------------------------------------
+        // ---------------------------------------------------
 
         // LOOP OVER THE CELLS AND DETERMINE WHICH CELLS WILL BE SPLIT
         for (int c = 0; c < n_cells; ++c)
         {
-            const double * S = &this->seeds[3*c];
-            voro::voronoicell_neighbor * vc = this->vc_ptrs[c];
-
-            if (vc != nullptr)
+            if (this->vc_ptrs[c] != nullptr)
             {
-                std::vector<double> vertices;
-                vc->vertices(S[0], S[1], S[2], vertices);
-
-                const int n_vertices = vertices.size()/3;
+                const VoronoiCell & cell = this->cells[c];
+                const int n_vertices = cell.v_conn.size();
 
                 // LOCATION OF THE FIRST VERTEX WITH RESPECT TO THE
                 // SURFACE DEFINING THE CRACK
-                const double V0_distance = crack.eval(vertices.data());
+                const double init_distance = crack.eval(this->vertices[cell.v_conn[0]].x);
 
                 // DETERMINE WHETHER THERE IS A CHANGE OF SIGN WHILE
                 // LOOPING OVER THE VERTICES
@@ -386,9 +665,9 @@ struct Mesh
                 int v = 1;
                 while (same_sign && (v < n_vertices))
                 {
-                    const double V_distance = crack.eval(&vertices[3*v]);
+                    const double vertex_distance = crack.eval(this->vertices[cell.v_conn[v]].x);
 
-                    if (V0_distance*V_distance < 0.0)
+                    if (init_distance*vertex_distance < 0.0)
                     {
                         same_sign = false;
                     }
@@ -400,17 +679,17 @@ struct Mesh
 
                 // LOCATION OF THE FIRST VERTEX WITH RESPECT TO THE
                 // CRACK TIP
-                const double V0_distance_from_crack_tip = crack.eval_crack_tip(vertices.data());
+                const double init_distance_from_crack_tip = crack.eval_crack_tip(this->vertices[cell.v_conn[0]].x);
 
                 // DETERMINE WHETHER THE SIGN REMAINS NEGATIVE WHILE
                 // LOOPING OVER THE VERTICES
-                bool negative_sign = (V0_distance_from_crack_tip < 0.0);
+                bool negative_sign = (init_distance_from_crack_tip < 0.0);
                 v = 1;
                 while (negative_sign && (v < n_vertices))
                 {
-                    const double V_distance = crack.eval_crack_tip(&vertices[3*v]);
+                    const double vertex_distance = crack.eval_crack_tip(this->vertices[cell.v_conn[v]].x);
 
-                    if (V_distance > 0.0)
+                    if (vertex_distance > 0.0)
                     {
                         negative_sign = false;
                     }
@@ -482,11 +761,10 @@ struct Mesh
         for (int ic = 0; ic < n_new_cells; ++ic)
         {
             const int c = cells_to_be_split[ic];
-            const VoronoiCell & cell = this->cells[c];
 
             voro::voronoicell_neighbor * cracked_vc = this->vc_ptrs[c];
 
-            // Locate all neighbors touching the cracked cell
+            // Locate all neighbors touching the cracked cells
             int ii, jj;
             if (voro_utils::find_face(*cracked_vc, ii, jj, new_ids[ic]))
             {
@@ -495,10 +773,10 @@ struct Mesh
             }
             std::vector<int> cut_nbr;
             voro_utils::face_neighbors(*cracked_vc, ii, jj, new_ids[ic], cut_nbr);
-            const int cut_n_nbr = cut_nbr.size();
+            const int n_cut_nbr = cut_nbr.size();
 
             // Loop over the neighbors and split the affected faces
-            for (int cn = 0; cn < cut_n_nbr; ++cn)
+            for (int cn = 0; cn < n_cut_nbr; ++cn)
             {
                 // Skip the walls
                 if (cut_nbr[cn] < 0)
@@ -507,7 +785,7 @@ struct Mesh
                 }
                 else
                 {
-                    const int cut_nbr_c = this->find_cell_index_by_id(cut_nbr[cn]);
+                    const int cut_nbr_c = this->get_cell_index(cut_nbr[cn]);
                     std::vector<int>::iterator it;
 
                     it = std::find(cells_to_be_split.begin(), cells_to_be_split.end(), cut_nbr_c);
@@ -530,178 +808,6 @@ struct Mesh
                         voro_utils::split_face(*nbr_vc, old_ids[ic], new_ids[ic],
                                                nbr_un[0], nbr_un[1], nbr_un[2], -2.0*nbr_dist);
                         nbr_vc->check_relations();
-
-                        /*
-                        // Old and new cell pair
-                        const std::array<int, 2> cell_pair = {c, cut_nbr_c};
-                        const std::array<int, 2> new_cell_pair = {new_ids[ic], cut_nbr_c};
-
-                        // Check whether we are splitting a crack face
-                        const int n_cell_faces = cell.f_conn.size();    
-                        int cf = 0;
-                        bool is_crack = false;
-                        while ((!is_crack) && (cf < n_cell_faces))
-                        {
-                            const VoronoiFace & face = this->faces[cell.f_conn[cf]];
-                            if ((face.parent_cells[0] == cell_pair[0]) &&
-                                (face.parent_cells[1] == cell_pair[1]) &&
-                                (face.bou_type == BOU_TYPE_CRACK))
-                            {
-                                is_crack = true;
-                            }
-                            else
-                            {
-                                cf += 1;
-                            }
-                        }
-
-                        // If the face that we are splitting is a crack
-                        // face, we must find the parent VoronoiCrack
-                        // and introduce a new crack face
-                        if (is_crack)
-                        {
-                            const int n_old_cracks = this->cracks.size();
-                            int cr = 0;
-                            bool found = false;
-                            while ((!found) && (cr < n_old_cracks))
-                            {
-                                const VoronoiCrack & voro_crack = this->cracks[cr];
-
-                                std::vector<int>::const_iterator f_it = std::find(voro_crack.f_conn.begin(),
-                                                                                  voro_crack.f_conn.end(),
-                                                                                  cell.f_conn[cf]);
-                                if (f_it != voro_crack.f_conn.end())
-                                {
-                                    found = true;
-                                }
-                                else
-                                {
-                                    cr += 1;
-                                }
-                            }
-
-                            if (!found)
-                            {
-                                std::string msg = "The information of the crack's faces is not consistent:\n";
-                                msg += "| current face: "+std::to_string(cell.f_conn[cf])+";\n";
-                                msg += "| old cell pair: "+std::to_string(cell_pair[0])+","+std::to_string(cell_pair[1])+"\n";
-                                msg += "| new cell pair: "+std::to_string(new_cell_pair[0])+","+std::to_string(new_cell_pair[1])+"\n";
-                                io::error("mesh.hpp - Mesh::add_crack", msg);
-                            }
-                            
-                            this->cracks[cr].f_conn.push_back(cell.f_conn[cf]);
-                            this->cracks[cr].c_conn.push_back(new_cell_pair);
-                        }
-                        */
-                    }
-                }
-            }
-
-            // Add crack faces that might have originated from the
-            // cutting of old crack faces
-            {
-                std::vector<int>::iterator it;
-                std::vector<int> nbr;
-                new_vc_ptrs[ic]->neighbors(nbr);
-                const int n_nbr = nbr.size();
-
-                for (int n = 0; n < n_nbr; ++n)
-                {
-                    if ((nbr[n] < 0) || (nbr[n] == old_ids[ic]))
-                    {
-                        continue;
-                    }
-
-                    const int nbr_c = this->find_cell_index_by_id(nbr[n]);
-                    it = std::find(old_ids.begin(), old_ids.end(), nbr[n]);
-
-                    bool do_continue = false;
-                    std::array<int, 2> cell_pair;
-                    std::array<int, 2> new_cell_pair;
-
-                    if (it != old_ids.end())
-                    {
-                        if (c > nbr_c)
-                        {
-                            do_continue = true;
-                        }
-                        else
-                        {
-                            cell_pair[0] = c;
-                            cell_pair[1] = nbr_c;
-
-                            new_cell_pair[0] = new_ids[ic];
-                            new_cell_pair[1] = new_ids[std::distance(old_ids.begin(), it)];
-                        }
-                    }
-                    else
-                    {
-                        cell_pair[0] = (c < nbr_c) ? c : nbr_c;
-                        cell_pair[1] = (c < nbr_c) ? nbr_c : c;
-
-                        new_cell_pair[0] = (c < nbr_c) ? new_ids[ic] : nbr_c;
-                        new_cell_pair[1] = (c < nbr_c) ? nbr_c : new_ids[ic];
-                    }
-
-                    if (do_continue) continue;
-
-                    {
-                        // Check whether we are splitting a crack face
-                        const int n_cell_faces = cell.f_conn.size();    
-                        int cf = 0;
-                        bool is_crack = false;
-                        while ((!is_crack) && (cf < n_cell_faces))
-                        {
-                            const VoronoiFace & face = this->faces[cell.f_conn[cf]];
-                            if ((face.parent_cells[0] == cell_pair[0]) &&
-                                (face.parent_cells[1] == cell_pair[1]) &&
-                                (face.bou_type == BOU_TYPE_CRACK))
-                            {
-                                is_crack = true;
-                            }
-                            else
-                            {
-                                cf += 1;
-                            }
-                        }
-
-                        // If the face that we are splitting is a crack
-                        // face, we must find the parent VoronoiCrack
-                        // and introduce a new crack face
-                        if (is_crack)
-                        {
-                            const int n_old_cracks = this->cracks.size();
-                            int cr = 0;
-                            bool found = false;
-                            while ((!found) && (cr < n_old_cracks))
-                            {
-                                const VoronoiCrack & voro_crack = this->cracks[cr];
-
-                                std::vector<int>::const_iterator f_it = std::find(voro_crack.f_conn.begin(),
-                                                                                  voro_crack.f_conn.end(),
-                                                                                  cell.f_conn[cf]);
-                                if (f_it != voro_crack.f_conn.end())
-                                {
-                                    found = true;
-                                }
-                                else
-                                {
-                                    cr += 1;
-                                }
-                            }
-
-                            if (!found)
-                            {
-                                std::string msg = "The information of the crack's faces is not consistent:\n";
-                                msg += "| current face: "+std::to_string(cell.f_conn[cf])+";\n";
-                                msg += "| old cell pair: "+std::to_string(cell_pair[0])+","+std::to_string(cell_pair[1])+"\n";
-                                msg += "| new cell pair: "+std::to_string(new_cell_pair[0])+","+std::to_string(new_cell_pair[1])+"\n";
-                                io::error("mesh.hpp - Mesh::add_crack", msg);
-                            }
-                            
-                            this->cracks[cr].f_conn.push_back(cell.f_conn[cf]);
-                            this->cracks[cr].c_conn.push_back(new_cell_pair);
-                        }
                     }
                 }
             }
@@ -752,7 +858,7 @@ struct Mesh
 
                 // Skip those cells whose faces have been cut
                 bool found = false;
-                for (int cn = 0; cn < cut_n_nbr; ++cn)
+                for (int cn = 0; cn < n_cut_nbr; ++cn)
                 {
                     if (nbr_id == cut_nbr[cn])
                     {
@@ -773,7 +879,7 @@ struct Mesh
                 }
 
                 // Update remaining
-                const int nbr_c = this->find_cell_index_by_id(nbr_id);
+                const int nbr_c = this->get_cell_index(nbr_id);
                 voro::voronoicell_neighbor * nbr_vc = this->vc_ptrs[nbr_c];
 
                 for (int v = 0; v < nbr_vc->p; ++v)
@@ -810,106 +916,54 @@ struct Mesh
         }
         // ------------------------------------------------------------
 
-        // RECOMPUTE THE TESSELLATION ---------------------------------
+        // UPDATE TOLERANCE -------------------------------------------
+        this->init_tolerance();
+        // ------------------------------------------------------------
+
+        // RECOMPUTE THE VORONOI TESSELLATION -------------------------
         {
-            this->ids.resize(n_cells+n_new_cells);
-            for (int c = 0; c < n_cells; ++c)
+            std::vector<int> ids(n_cells+n_new_cells);
+            for (int i = 0; i < n_cells; ++i)
             {
-                this->ids[c] = this->cells[c].id;
+                ids[i] = this->cells[i].id;
             }
             for (int ic = 0; ic < n_new_cells; ++ic)
             {
-                this->ids[n_cells+ic] = new_ids[ic];
+                ids[n_cells+ic] = new_ids[ic];
             }
-        }
-        this->init_tessellation();
-        // ------------------------------------------------------------
-
-        // UPDATE THE OLD FRACTURE DATA STRUCTURES --------------------
-        {
-            const int n_old_cracks = this->cracks.size();
-            
-            for (int cr = 0; cr < n_old_cracks; ++cr)
-            {
-                VoronoiCrack & voro_crack = this->cracks[cr];
-                const int n_cell_pairs = voro_crack.c_conn.size();
-
-                int cc = n_cell_pairs-1;
-
-                while (cc >= 0)
-                {
-                    const int ci = voro_crack.c_conn[cc][0];
-                    const int cj = voro_crack.c_conn[cc][1];
-
-                    const VoronoiCell & cell = this->cells[ci];
-                    const int n_cell_nbr = cell.nbr.size();
-
-                    int n = 0;
-                    bool found = false;
-
-                    while ((!found) && (n < n_cell_nbr))
-                    {
-                        const int nbr_c = cell.nbr[n];
-
-                        if ((nbr_c >= 0) && (nbr_c == cj))
-                        {
-                            found = true;
-                            const int f = cell.f_conn[n];
-                            this->faces[f].bou_type = BOU_TYPE_CRACK;
-                            voro_crack.f_conn[cc] = f;
-                        }
-                        else
-                        {
-                            n += 1;
-                        }
-                    }
-
-                    if (!found)
-                    {
-                        voro_crack.f_conn.erase(voro_crack.f_conn.begin()+cc);
-                        voro_crack.c_conn.erase(voro_crack.c_conn.begin()+cc);
-                    }
-
-                    cc -= 1;
-                }
-            }
+            this->init_voronoi_cells(ids);
+            this->init_voronoi_faces();
+            this->init_voronoi_vertices_and_edges();
+            this->init_voronoi_walls();
         }
         // ------------------------------------------------------------
 
-        // ADD A NEW FRACTURE OBJECT ----------------------------------
+        // UPDATE THE CRACKS INFO -------------------------------------
+        for (int ic = 0; ic < n_new_cells; ++ic)
         {
-            VoronoiCrack voro_crack;
+            const VoronoiCell & cell = this->cells[n_cells+ic];
+            const int n_cell_faces = cell.f_conn.size();
 
-            voro_crack.id = crack.id;
-
-            for (int ic = 0; ic < n_new_cells; ++ic)
+            for (int cf = 0; cf < n_cell_faces; ++cf)
             {
-                const VoronoiCell & cell = this->cells[n_cells+ic];
-                const int n_cell_faces = cell.f_conn.size();
+                const int f = cell.f_conn[cf];
+                VoronoiFace & face = this->faces[f];
 
-                for (int cf = 0; cf < n_cell_faces; ++cf)
+                if (cell.nbr[cf] == cells_to_be_split[ic])
                 {
-                    const int f = cell.f_conn[cf];
-                    VoronoiFace & face = this->faces[f];
-
-                    if (cell.nbr[cf] == cells_to_be_split[ic])
-                    {
-                        face.bou_type = BOU_TYPE_CRACK;
-
-                        voro_crack.f_conn.push_back(f);
-                        voro_crack.c_conn.push_back({face.parent_cells[0], face.parent_cells[1]});
-                    }
+                    face.bou_type = BOU_TYPE_CRACK;
                 }
             }
-
-            this->cracks.push_back(voro_crack);
         }
         // ------------------------------------------------------------
     }
     // ================================================================
 
-    // EXPORT TO VTK FORMAT: TESSELLATION =============================
-    void export_tessellation_vtk(const std::string & filepath) const;
+    // UPDATE MESH ====================================================
+    // ================================================================
+
+    // EXPORT TO VTK FORMAT ===========================================
+    void export_vtk(const std::string & filepath);
     // ================================================================
 };
 // ####################################################################

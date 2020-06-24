@@ -136,6 +136,9 @@ int main()
 
     // Number of particles
     const int n_particles = 1000;
+
+    // Number of fractures
+    const int n_fractures = 50;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -162,80 +165,52 @@ int main()
     // INITIALIZE THE MESH WITH THE TESSELLATION INFORMATION
     msh.init(con);
 
-    // BUILD THE MESH
-    msh.build(3, 0.1);
-
     // EXPORT TO VTK FORMAT
-    msh.export_vtk("mesh.vtu");
+    msh.export_tessellation_vtk("tess.vtu");
     // -----------------------------------------------------
 
-    // ADD WALLS ------------------------------------------------------
+    // ADD FRACTURES --------------------------------------------------
+    for (int f = 0; f < n_fractures; ++f)
     {
-        const double un[3] = {0.0, 1.0, 0.0};
-        const double d = -0.6;
-        const plane_wall pln(un, d, -101);
-        msh.add_wall(pln);
-
-        // BUILD THE MESH
-        msh.build(3, 0.1);
-
-        // EXPORT TO VTK FORMAT
-        msh.export_vtk("mesh-2.vtu");
-    }
-
-    {
-        const double alpha = M_PI/3.0;
+        const double alpha = 2.0*M_PI*rnd();
         const double un[3] = {std::cos(alpha), std::sin(alpha), 0.0};
-        const double d = -std::sin(alpha)*0.6;
-        const plane_wall pln(un, d, -102);
-        msh.add_wall(pln);
-
-        // BUILD THE MESH
-        msh.build(3, 0.1);
-
-        // EXPORT TO VTK FORMAT
-        msh.export_vtk("mesh-3.vtu");
-    }
-    // ----------------------------------------------------------------
-
-    // ADD CRACKS -----------------------------------------------------
-    {
-        const double alpha = M_PI/2.0;
-        const double un[3] = {std::cos(alpha), std::sin(alpha), 0.0};
-        const double C[3] = {-0.5, -0.2, 0.0};
+        const double C[3] = {X1L+rnd()*(X1U-X1L), X2L+rnd()*(X2U-X2L), 0.5*(X3U+X3L)};
         const double R[3] = {0.4, 0.4, 0.4};
         const double d = -(C[0]*un[0]+C[1]*un[1]+C[2]*un[2]);
-        const plane_elliptic_crack crk(un, d, C, R, -1002);
-        msh.add_crack(crk);
+        const plane_elliptic_crack crk(un, d, C, R, -(1000+f));
 
-        // BUILD THE MESH
-        msh.build(3, 0.1);
-
-        // EXPORT TO VTK FORMAT
-        msh.export_vtk("mesh-4.vtu");
+        {
+            msh.add_crack(crk);
+        }
     }
 
-    {
-        const double alpha = M_PI/3.0;
-        const double un[3] = {std::cos(alpha), std::sin(alpha), 0.0};
-        const double C[3] = {-0.5, -0.2, 0.0};
-        const double R[3] = {0.4, 0.4, 0.4};
-        const double d = -(C[0]*un[0]+C[1]*un[1]+C[2]*un[2]);
-        const plane_elliptic_crack crk(un, d, C, R, -1003);
-        msh.add_crack(crk);
-
-        // BUILD THE MESH
-        msh.build(3, 0.1);
-
-        // EXPORT TO VTK FORMAT
-        msh.export_vtk("mesh-5.vtu");
-    }
+    msh.export_tessellation_vtk("tess-2.vtu");
     // ----------------------------------------------------------------
 
     // REPORT WALLS ---------------------------------------------------
     // ----------------------------------------------------------------
 
     // REPORT CRACKS --------------------------------------------------
+    for (int cr = 0; cr < n_fractures; ++cr)
+    {
+        const voromesh::VoronoiCrack & crack = msh.cracks[cr];
+        
+        const int n_cell_pairs = crack.c_conn.size();
+        
+        std::cout << "Crack: " << crack.id << std::endl;
+        std::cout << " - cell pairs(" << n_cell_pairs << "):";
+        for (int cp = 0; cp < n_cell_pairs; ++cp)
+        {
+            const int ci = crack.c_conn[cp][0];
+            const int cj = crack.c_conn[cp][1];
+            std::cout << "(" << msh.cells[ci].id << ", " << msh.cells[cj].id << "), ";
+        }
+        std::cout << std::endl;
+        
+    }
+    // ----------------------------------------------------------------
+
+    // FILL IN THE OUTPUT DATA STRUCTURES -----------------------------
     // ----------------------------------------------------------------
 }
 // ====================================================================

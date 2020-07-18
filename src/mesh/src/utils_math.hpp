@@ -116,6 +116,8 @@ void linspace(const double xlo, const double xhi, const int N, double * S)
 // DELAUNAY TRIANGULATION #############################################
 void delaunay_2d(std::vector<double> & points, std::vector<int> & tri, std::vector<int> & tri_edges,
                  const double min_quality = 1.0e-5);
+void delaunay_3d(std::vector<double> & points, std::vector<int> & tet, std::vector<int> & tet_edges,
+                 const double min_quality = 1.0e-5);
 // ####################################################################
 
 // MATRIX OPERATION ###################################################

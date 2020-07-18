@@ -1,8 +1,6 @@
 // main.cpp
 
 // INCLUDES ===========================================================
-#include <algorithm>
-
 #include <iostream>
 #include <voro++.hh>
 #include <voromesh++.hpp>
@@ -16,43 +14,6 @@ double rnd()
     return (double(rand())/RAND_MAX);
 }
 // ====================================================================
-
-
-
-// WALL CLASS #########################################################
-struct plane_wall
-{
-    // DATA MEMBERS ===================================================
-    const double un[3];
-    const double d;
-    const int id;
-    // ================================================================
-
-    // CONSTRUCTOR ====================================================
-    plane_wall(const double * un_, const double d_, const int id_ = -99)
-    :
-    un{un_[0], un_[1], un_[2]},
-    d(d_),
-    id(id_)
-    {}
-    // ================================================================
-
-    // EVAL THE DISTANCE FUNCTION DEFINING THE WALL ===================
-    double eval(const double * X) const
-    {
-        const double res = un[0]*X[0]+un[1]*X[1]+un[2]*X[2]+d;
-        return res;
-    }
-
-    void eval_grad(const double * X, double * grad) const
-    {
-        grad[0] = un[0];
-        grad[1] = un[1];
-        grad[2] = un[2];
-    }
-    // ================================================================
-};
-// ####################################################################
 
 
 
@@ -121,8 +82,8 @@ int main()
     const double X1U = +1.0;
     const double X2L = -1.0;
     const double X2U = +1.0;
-    const double X3L = -0.025;
-    const double X3U = +0.025;
+    const double X3L = -1.0;
+    const double X3U = +1.0;
 
     // Container blocks
     const int nb1 = 6;
@@ -138,7 +99,7 @@ int main()
     const int n_particles = 1000;
 
     // Number of fractures
-    const int n_fractures = 50;
+    const int n_fractures = 0;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -152,12 +113,12 @@ int main()
     voromesh::Mesh msh;
     // ----------------------------------------------------------------
 
-    // PLACE THE PARTICLES (TO GENERATE A COLUMNAR MORPHOLOGY) --------
+    // PLACE THE PARTICLES --------------------------------------------
     for (int i = 0; i < n_particles; ++i)
     {
         X1 = X1L+rnd()*(X1U-X1L);
         X2 = X2L+rnd()*(X2U-X2L);
-        X3 = 0.5*(X3U+X3L);
+        X3 = X3L+rnd()*(X3U-X3L);
         con.put(i, X1, X2, X3);
     }
     // ----------------------------------------------------------------
@@ -167,50 +128,32 @@ int main()
 
     // EXPORT TO VTK FORMAT
     msh.export_tessellation_vtk("tess.vtu");
+    msh.export_centroidal_Delaunay("tess-Delaunay.vtu");
     // -----------------------------------------------------
 
-    // ADD FRACTURES --------------------------------------------------
+    // ADD CRACKS -----------------------------------------------------
     for (int f = 0; f < n_fractures; ++f)
     {
-        const double alpha = 2.0*M_PI*rnd();
-        const double un[3] = {std::cos(alpha), std::sin(alpha), 0.0};
-        const double C[3] = {X1L+rnd()*(X1U-X1L), X2L+rnd()*(X2U-X2L), 0.5*(X3U+X3L)};
-        const double R[3] = {0.4, 0.4, 0.4};
+        const double u = rnd();
+        const double v = rnd();
+        const double alpha1 = 2.0*M_PI*u;
+        const double alpha2 = std::acos(2.0*v-1.0);
+        const double un[3] = {std::cos(alpha1)*std::sin(alpha2),
+                              std::sin(alpha1)*std::sin(alpha2),
+                              std::cos(alpha2)};
+        const double C[3] = {X1L+rnd()*(X1U-X1L), X2L+rnd()*(X2U-X2L), X3L+rnd()*(X3U-X3L)};
         const double d = -(C[0]*un[0]+C[1]*un[1]+C[2]*un[2]);
-        const plane_elliptic_crack crk(un, d, C, R, -(1000+f));
-
+        const double R[3] = {0.5, 0.5, 0.5};
+        const plane_elliptic_crack crk(un, d, C, R, -(10000+f));
+        
+        if (f != 23)
         {
             msh.add_crack(crk);
         }
     }
 
     msh.export_tessellation_vtk("tess-2.vtu");
-    // ----------------------------------------------------------------
-
-    // REPORT WALLS ---------------------------------------------------
-    // ----------------------------------------------------------------
-
-    // REPORT CRACKS --------------------------------------------------
-    for (int cr = 0; cr < n_fractures; ++cr)
-    {
-        const voromesh::VoronoiCrack & crack = msh.cracks[cr];
-        
-        const int n_cell_pairs = crack.c_conn.size();
-        
-        std::cout << "Crack: " << crack.id << std::endl;
-        std::cout << " - cell pairs(" << n_cell_pairs << "):";
-        for (int cp = 0; cp < n_cell_pairs; ++cp)
-        {
-            const int ci = crack.c_conn[cp][0];
-            const int cj = crack.c_conn[cp][1];
-            std::cout << "(" << msh.cells[ci].id << ", " << msh.cells[cj].id << "), ";
-        }
-        std::cout << std::endl;
-        
-    }
-    // ----------------------------------------------------------------
-
-    // FILL IN THE OUTPUT DATA STRUCTURES -----------------------------
+    msh.export_centroidal_Delaunay("tess-2-Delaunay.vtu");
     // ----------------------------------------------------------------
 }
 // ====================================================================

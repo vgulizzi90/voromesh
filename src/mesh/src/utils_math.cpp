@@ -8,6 +8,8 @@ extern "C"
 #include "../triangle/triangle.h"
 }
 
+#include "../tetgen/tetgen.h"
+
 namespace voromesh
 {
 namespace math
@@ -80,6 +82,42 @@ void delaunay_2d(std::vector<double> & points, std::vector<int> & tri, std::vect
     delete [] triangles;
     // ----------------------------------------------------------------
 
+}
+
+void delaunay_3d(std::vector<double> & points, std::vector<int> & tet, std::vector<int> & tet_edges,
+                 const double min_quality)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int n_points = points.size()/3;
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    int n_edges, n_tetrahedra;
+
+    // TETGEN
+    tetgenio in, out;
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    in.numberofpoints = n_points;
+
+    in.pointlist = new double[3*in.numberofpoints];
+    std::copy(points.begin(), points.end(), in.pointlist);
+    // ----------------------------------------------------------------
+
+    // CALL TETGEN ----------------------------------------------------
+    char sw[] = "Qe";
+
+    tetrahedralize(sw, &in, &out);
+    // ----------------------------------------------------------------
+
+    // COPY EDGES AND TETRAHEDRA FOR OUTPUT ---------------------------
+    tet_edges.resize(2*out.numberofedges);
+    tet.resize(4*out.numberoftetrahedra);
+
+    std::copy(out.edgelist, out.edgelist+2*out.numberofedges, tet_edges.data());
+    std::copy(out.tetrahedronlist, out.tetrahedronlist+4*out.numberoftetrahedra, tet.data());
+    // ----------------------------------------------------------------
 }
 // ####################################################################
 

@@ -56,6 +56,8 @@ struct VoronoiCell
     std::vector<int> nbr;
     double centroid[3], volume;
 
+    std::vector<int> i_conn;
+
     std::vector<int> f_conn;
     // ================================================================
 
@@ -124,6 +126,9 @@ struct Mesh
 
     // VORO++
     std::vector<voro::voronoicell_neighbor *> vc_ptrs;
+
+    // ADDITIONAL FLAGS
+    bool columnar[3];
     // ================================================================
 
     // CONSTRUCTOR ====================================================
@@ -146,6 +151,18 @@ struct Mesh
         // PARAMETERS -----------------------
         const int np = con.total_particles();
         // ----------------------------------
+
+        // VARIABLES --------------------------------------------------
+        double S1_min, S1_max, S2_min, S2_max, S3_min, S3_max;
+        double L_max;
+
+        S1_min = std::numeric_limits<double>::max();
+        S1_max = std::numeric_limits<double>::min();
+        S2_min = std::numeric_limits<double>::max();
+        S2_max = std::numeric_limits<double>::min();
+        S3_min = std::numeric_limits<double>::max();
+        S3_max = std::numeric_limits<double>::min();
+        // ------------------------------------------------------------
 
         // FREE MEMORY
         this->free();
@@ -174,6 +191,13 @@ struct Mesh
                 this->seeds[3*k+1] = pp[1];
                 this->seeds[3*k+2] = pp[2];
 
+                S1_min = std::min(S1_min, this->seeds[3*k+0]);
+                S1_max = std::max(S1_max, this->seeds[3*k+0]);
+                S2_min = std::min(S2_min, this->seeds[3*k+1]);
+                S2_max = std::max(S2_max, this->seeds[3*k+1]);
+                S3_min = std::min(S3_min, this->seeds[3*k+2]);
+                S3_max = std::max(S3_max, this->seeds[3*k+2]);
+
                 // Check the id of the voronoi cell is not negative
                 if (cl.pid() < 0)
                 {
@@ -194,6 +218,14 @@ struct Mesh
             k += 1;
         }
         while (cl.inc());
+        // ------------------------------------------------------------
+
+        // CHECK WHETHER THE TESSELLATION IS COLUMNAR -----------------
+        L_max = std::max(S1_max-S1_min, std::max(S2_max-S2_min, S3_max-S3_min));
+
+        if ((S1_max-S1_min) < L_max*1.0e-12) this->columnar[0] = true;
+        if ((S2_max-S2_min) < L_max*1.0e-12) this->columnar[1] = true;
+        if ((S3_max-S3_min) < L_max*1.0e-12) this->columnar[2] = true;
         // ------------------------------------------------------------
 
         // INIT THE VORONOI TESSELLATION DATA STRUCTURES
@@ -910,6 +942,10 @@ struct Mesh
 
     // EXPORT TO VTK FORMAT: TESSELLATION =============================
     void export_tessellation_vtk(const std::string & filepath) const;
+    // ================================================================
+
+    // EXPORT TO VTK FORMAT: CENTROIDAL DELAUNAY TRIANGULATION ========
+    void export_centroidal_Delaunay(const std::string & filepath) const;
     // ================================================================
 };
 // ####################################################################

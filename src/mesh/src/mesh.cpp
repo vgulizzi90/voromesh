@@ -90,6 +90,8 @@ bool VoronoiCrack::contains_cell(const int c) const
 // MESH CLASS #########################################################
 // CONSTRUCTOR ========================================================
 Mesh::Mesh()
+:
+columnar{false,false,false}
 {
 
 }
@@ -278,6 +280,137 @@ void Mesh::init_tessellation()
                 }
 
                 cell.nbr[n] = nbr_c;
+            }
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // COMPUTE CENTROIDAL DELAUNAY FOR EACH VALID CELL ----------------
+    if (this->columnar[0] || this->columnar[1] || this->columnar[2])
+    {
+        const int fixed_dir = ((this->columnar[0]) ? 0 : ((this->columnar[1]) ? 1 : 2));
+        const int d0 = ((fixed_dir-1)*(fixed_dir-2))/2;
+        const int d1 = (4+fixed_dir-fixed_dir*fixed_dir)/2;
+
+        for (int c = 0; c < n_vcs; ++c)
+        {
+            voro::voronoicell_neighbor * vc = this->vc_ptrs[c];
+            VoronoiCell & cell = this->cells[c];
+            const int n_nbr = cell.nbr.size();
+            const int n_cell_faces = n_nbr;
+
+            if (vc != nullptr)
+            {
+                std::vector<int> cs;
+                std::vector<double> points;
+                std::vector<int> triangles, edges;
+
+                double uv[2], tmp;
+
+                cs.push_back(c);
+                points.push_back(cell.centroid[d0]);
+                points.push_back(cell.centroid[d1]);
+
+                // COLLECT THE NEIGHBORS OF THE CURRENT CELL
+                for (int n = 0; n < n_nbr; ++n)
+                {
+                    const int nbr_c = cell.nbr[n];
+                    
+                    if (nbr_c >= 0)
+                    {
+                        cs.push_back(nbr_c);
+
+                        uv[0] = this->cells[nbr_c].centroid[d0]-cell.centroid[d0];
+                        uv[1] = this->cells[nbr_c].centroid[d1]-cell.centroid[d1];
+                        tmp = 1.0/std::sqrt(uv[0]*uv[0]+uv[1]*uv[1]);
+                        uv[0] *= tmp;
+                        uv[1] *= tmp;
+
+                        points.push_back(cell.centroid[d0]+uv[0]);
+                        points.push_back(cell.centroid[d1]+uv[1]);
+                    }
+                }
+
+                // COMPUTE THE DELAUNAY TRIANGULATION
+                math::delaunay_2d(points, triangles, edges);
+
+                // FIX THE CONNECTIVITY
+                for (size_t t = 0; t < triangles.size(); ++t)
+                {
+                    triangles[t] = cs[triangles[t]];
+                }
+                for (size_t ed = 0; ed < edges.size(); ++ed)
+                {
+                    edges[ed] = cs[edges[ed]];
+                }
+
+                // STORE INFO
+                cell.i_conn.resize(triangles.size());
+                std::copy(triangles.begin(), triangles.end(), cell.i_conn.begin());
+            }
+        }
+    }
+    else
+    {
+        for (int c = 0; c < n_vcs; ++c)
+        {
+            voro::voronoicell_neighbor * vc = this->vc_ptrs[c];
+            VoronoiCell & cell = this->cells[c];
+            const int n_nbr = cell.nbr.size();
+            const int n_cell_faces = n_nbr;
+
+            if (vc != nullptr)
+            {
+                std::vector<int> cs;
+                std::vector<double> points;
+                std::vector<int> tetrahedra, edges;
+
+                double uv[3], tmp;
+
+                cs.push_back(c);
+                points.push_back(cell.centroid[0]);
+                points.push_back(cell.centroid[1]);
+                points.push_back(cell.centroid[2]);
+
+                // COLLECT THE NEIGHBORS OF THE CURRENT CELL
+                for (int n = 0; n < n_nbr; ++n)
+                {
+                    const int nbr_c = cell.nbr[n];
+                    
+                    if (nbr_c >= 0)
+                    {
+                        cs.push_back(nbr_c);
+
+                        uv[0] = this->cells[nbr_c].centroid[0]-cell.centroid[0];
+                        uv[1] = this->cells[nbr_c].centroid[1]-cell.centroid[1];
+                        uv[2] = this->cells[nbr_c].centroid[2]-cell.centroid[2];
+                        tmp = 1.0/std::sqrt(uv[0]*uv[0]+uv[1]*uv[1]+uv[2]*uv[2]);
+                        uv[0] *= tmp;
+                        uv[1] *= tmp;
+                        uv[2] *= tmp;
+
+                        points.push_back(cell.centroid[0]+uv[0]);
+                        points.push_back(cell.centroid[1]+uv[1]);
+                        points.push_back(cell.centroid[2]+uv[2]);
+                    }
+                }
+
+                // COMPUTE THE DELAUNAY TRIANGULATION
+                math::delaunay_3d(points, tetrahedra, edges);
+
+                // FIX THE CONNECTIVITY
+                for (size_t t = 0; t < tetrahedra.size(); ++t)
+                {
+                    tetrahedra[t] = cs[tetrahedra[t]];
+                }
+                for (size_t ed = 0; ed < edges.size(); ++ed)
+                {
+                    edges[ed] = cs[edges[ed]];
+                }
+
+                // STORE INFO
+                cell.i_conn.resize(tetrahedra.size());
+                std::copy(tetrahedra.begin(), tetrahedra.end(), cell.i_conn.begin());
             }
         }
     }
@@ -678,6 +811,126 @@ void Mesh::export_tessellation_vtk(const std::string & filepath) const
                 VTK_points.push_back(vertices[3*v+1]);
                 VTK_points.push_back(vertices[3*v+2]);
             }
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // DUMP DATA ------------------------------------------------------
+    vtk::print_unstructured_data(filepath,
+                                 n_VTK_points,
+                                 n_VTK_cells,
+                                 VTK_points,
+                                 VTK_cell_conn,
+                                 VTK_cell_offset,
+                                 VTK_cell_type,
+                                 VTK_cell_fields,
+                                 VTK_cell_fields_name,
+                                 {},
+                                 {},
+                                 "ascii");
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+
+// EXPORT TO VTK FORMAT: CENTROIDAL DELAUNAY TRIANGULATION ============
+void Mesh::export_centroidal_Delaunay(const std::string & filepath) const
+{
+    // PARAMETERS -----------------------------------------------------
+    const int conn_size = (this->columnar[0] || this->columnar[1] || this->columnar[2]) ? 3 : 4;
+
+    const int n_vcs = this->vc_ptrs.size();
+
+    const std::vector<std::string> VTK_cell_fields_name = 
+    {
+        "PARENT"
+    };
+    const int n_cell_fields = VTK_cell_fields_name.size();
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    vtk::Cell_conn_t n_VTK_points;
+    vtk::Cell_offs_t n_VTK_cells;
+
+    long VTK_cell_conn_len;
+
+    vtk::Cell_offs_t VTK_cells_pos;
+
+    std::vector<vtk::Float_t> VTK_points;
+    std::vector<vtk::Cell_conn_t> VTK_cell_conn;
+    std::vector<vtk::Cell_offs_t> VTK_cell_offset;
+    std::vector<vtk::Cell_type_t> VTK_cell_type;
+    std::vector<std::vector<vtk::Int_t>> VTK_cell_fields(n_cell_fields);
+    // ----------------------------------------------------------------
+
+    // VTK POINTS AND VTK CELLS ---------------------------------------
+    n_VTK_points = 0;
+    n_VTK_cells = 0;
+
+    VTK_cell_offset.push_back(0);
+
+    for (int c = 0; c < n_vcs; ++c)
+    {
+        const int id = this->ids[c];
+
+        const VoronoiCell & cell = this->cells[c];
+        const int n_nbr = cell.nbr.size();
+        const int n_cell_faces = n_nbr;
+
+        if (this->vc_ptrs[c] != nullptr)
+        {
+            
+            // VTK CELLS: ADD DELAUNAY CONNECTIVITY
+            const int n_simplices = cell.i_conn.size()/conn_size;
+
+            if (conn_size == 3)
+            {
+                for (int s = 0; s < n_simplices; ++s)
+                {
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+0]);
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+1]);
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+2]);
+
+                    VTK_cell_offset.push_back(VTK_cell_offset.back()+conn_size);
+
+                    VTK_cell_type.push_back(VTK_TRIANGLE);
+
+                    VTK_cell_fields[0].push_back(id);
+                }
+            }
+            else if (conn_size == 4)
+            {
+                for (int s = 0; s < n_simplices; ++s)
+                {
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+0]);
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+1]);
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+2]);
+                    VTK_cell_conn.push_back(cell.i_conn[conn_size*s+3]);
+
+                    VTK_cell_offset.push_back(VTK_cell_offset.back()+conn_size);
+
+                    VTK_cell_type.push_back(VTK_TETRA);
+
+                    VTK_cell_fields[0].push_back(id);
+                }
+            }
+
+            n_VTK_cells += n_simplices;
+
+            // VTK POINT
+            n_VTK_points += 1;
+
+            VTK_points.push_back(cell.centroid[0]);
+            VTK_points.push_back(cell.centroid[1]);
+            VTK_points.push_back(cell.centroid[2]);
+        }
+        else
+        {
+            // VTK POINT
+            n_VTK_points += 1;
+
+            VTK_points.push_back(0.0);
+            VTK_points.push_back(0.0);
+            VTK_points.push_back(0.0);
         }
     }
     // ----------------------------------------------------------------
